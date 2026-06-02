@@ -33,7 +33,7 @@ describe('runContext', () => {
       expect(result.data.url).toBe(info.url);
       expect(result.data.embedUrl).toBe(info.embedUrl);
       expect(result.data.transcript.transcript).toBeNull();
-      expect(result.data.transcript.reason).toContain('transcript fetch failed');
+      expect(result.data.transcript.reason).toContain('transcript unavailable');
     }
   });
 
