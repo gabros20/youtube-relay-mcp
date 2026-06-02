@@ -1,6 +1,6 @@
 {
   "name": "youtube-relay-mcp",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Code-execution-based YouTube tool — CLI (ytrelay) + MCP shim + Claude Code skill. Search YouTube, fetch transcript/title/description, get an embeddable video ID.",
   "type": "module",
   "bin": {
