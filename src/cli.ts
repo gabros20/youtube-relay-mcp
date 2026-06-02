@@ -199,7 +199,7 @@ export async function run(
 // main — only executed when this file is the direct entry point
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const engine = await createEngine();
   const { stdout, exitCode } = await run(process.argv.slice(2), engine);
   process.stdout.write(`${stdout}\n`);
