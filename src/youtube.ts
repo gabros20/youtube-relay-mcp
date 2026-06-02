@@ -6,7 +6,7 @@
  * the network methods (search / getInfo / getTranscript) are intentionally thin
  * and delegate logic to those normalizers.
  */
-import { Innertube } from 'youtubei.js';
+import { Innertube, Utils } from 'youtubei.js';
 
 import { extractVideoId, toEmbedUrl, toWatchUrl } from './ids.ts';
 import type { TranscriptResult, VideoInfo, VideoSummary } from './types.ts';
@@ -59,16 +59,10 @@ export async function createEngine(): Promise<Engine> {
         const segs = finalInfo.transcript?.content?.body?.initial_segments ?? [];
         return normalizeTranscript(id, segs, requestedLang ?? null);
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        // "Engagement panels not found" and "Transcript panel not found" both
-        // indicate the video genuinely has no captions — return the null+reason shape.
-        // A network-level / IP-block error (e.g. status 400 / 429) should re-throw
-        // so the command layer can emit an error envelope with a proxy hint.
-        if (
-          msg.includes('likely has no transcript') ||
-          msg.includes('no transcript') ||
-          msg.includes('no captions')
-        ) {
+        // Only the known captionless cases collapse to a null+reason result.
+        // A network-level / IP-block error (e.g. status 400 / 429) re-throws so
+        // the command layer can emit an error envelope with a proxy hint.
+        if (isNoCaptionsError(e)) {
           return noCaptionsResult(id);
         }
         throw e;
@@ -234,4 +228,23 @@ export function noCaptionsResult(id: string): TranscriptResult {
     transcript: null,
     reason: 'no captions',
   };
+}
+
+/**
+ * Classifies a thrown error as a genuine "video has no captions" case
+ * (true → return noCaptionsResult) vs. anything else such as a network /
+ * IP-block error (false → re-throw so the command layer surfaces it).
+ *
+ * youtubei.js v17 throws an `InnertubeError` (exported under the `Utils`
+ * namespace) for the captionless cases. The two stable messages are:
+ *   - "...Video likely has no transcript." (engagement / transcript panel absent)
+ *   - "Transcript continuation not found." (panel present but no segments)
+ *
+ * Deliberately NOT treated as no-captions: "Cannot get transcript from basic
+ * video info." — that is a coding error (wrong info object) and must throw.
+ */
+export function isNoCaptionsError(e: unknown): boolean {
+  if (!(e instanceof Utils.InnertubeError)) return false;
+  const msg = e.message;
+  return msg.includes('likely has no transcript') || msg === 'Transcript continuation not found.';
 }

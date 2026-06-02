@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { Utils } from 'youtubei.js';
 import {
   formatDuration,
+  isNoCaptionsError,
   noCaptionsResult,
   normalizeInfo,
   normalizeSearchResults,
@@ -256,5 +258,45 @@ describe('noCaptionsResult', () => {
     expect(r.source).toBeNull();
     expect(r.transcript).toBeNull();
     expect(r.reason).toBe('no captions');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNoCaptionsError
+// ---------------------------------------------------------------------------
+describe('isNoCaptionsError', () => {
+  test('true for "Engagement panels not found. Video likely has no transcript."', () => {
+    const e = new Utils.InnertubeError(
+      'Engagement panels not found. Video likely has no transcript.',
+    );
+    expect(isNoCaptionsError(e)).toBe(true);
+  });
+
+  test('true for "Transcript panel not found. Video likely has no transcript."', () => {
+    const e = new Utils.InnertubeError(
+      'Transcript panel not found. Video likely has no transcript.',
+    );
+    expect(isNoCaptionsError(e)).toBe(true);
+  });
+
+  test('true for exactly "Transcript continuation not found."', () => {
+    const e = new Utils.InnertubeError('Transcript continuation not found.');
+    expect(isNoCaptionsError(e)).toBe(true);
+  });
+
+  test('false for a generic network error (HTTP 429)', () => {
+    const e = new Error('HTTP 429 Too Many Requests');
+    expect(isNoCaptionsError(e)).toBe(false);
+  });
+
+  test('false for "Cannot get transcript from basic video info." (coding error, must throw)', () => {
+    const e = new Utils.InnertubeError('Cannot get transcript from basic video info.');
+    expect(isNoCaptionsError(e)).toBe(false);
+  });
+
+  test('false for a plain non-error value', () => {
+    expect(isNoCaptionsError('Transcript continuation not found.')).toBe(false);
+    expect(isNoCaptionsError(null)).toBe(false);
+    expect(isNoCaptionsError(undefined)).toBe(false);
   });
 });
