@@ -29,7 +29,7 @@ export async function runContext(
       lang: null,
       source: null,
       transcript: null,
-      reason: `transcript unavailable (known limitation — YouTube requires a PO token): ${errorMessage(e)}`,
+      reason: `transcript unavailable: ${errorMessage(e)}`,
     };
   }
 

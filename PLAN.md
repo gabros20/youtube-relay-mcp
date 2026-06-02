@@ -161,16 +161,16 @@ real-call smoke test is kept separate.
 
 ## Status
 
-v1 built via subagent-driven-development + TDD (110 tests). `search`, `info`, and
-`context` metadata work live; CLI + MCP shim verified end-to-end (real video
-fetch + MCP `initialize` handshake).
+v1.0.0 published to npm + GitHub; v1.1 adds working transcripts. Built via
+subagent-driven-development + TDD; `search`, `info`, `transcript`, and `context`
+all verified live (CLI + MCP shim, real video fetch + MCP `initialize` handshake).
 
-**Transcript deferred (known limitation).** YouTube now requires a PO token on
-its `get_transcript` endpoint and on timedtext caption URLs, so the bundled
-`youtubei.js` engine returns HTTP 400 / empty even from a residential IP
-(confirmed concretely; `yt-dlp` still works locally, proving it's a PO-token
-issue, not an outage). The `transcript` command and `context`'s transcript field
-are wired and degrade gracefully (clean `FETCH_FAILED` + honest hint). v1 ships
-without working transcript text. **Next:** research a pure-TS transcript backend
-(PO-token generation via botguard, or a caption-URL path with the required
-`pot` param) — tracked as the immediate fast-follow.
+**Transcripts solved (v1.1) — pure TS, no PO token, no external binary.**
+youtubei.js `info.getTranscript()` hits the gated `get_transcript` endpoint
+(HTTP 400). The fix: read the **signed `timedtext` caption URL** from the player
+response and fetch `&fmt=json3` directly. The URL is only properly signed when
+the client is built with `Innertube.create({ generate_session_locally: true })`
+— without it the caption URL returns HTTP 200 with an empty body. Validated live
+across manual + auto-generated (ASR) captions and multiple languages. Engine:
+`pickCaptionTrack` (language/manual-preference selection) + `parseJson3Transcript`
+(pure, TDD'd). No `bgutils-js`/jsdom, no `yt-dlp`.

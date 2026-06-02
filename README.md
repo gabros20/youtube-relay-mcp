@@ -5,12 +5,10 @@ A code-execution-based YouTube tool for AI agents — a TypeScript **CLI**
 skill**. Search YouTube, fetch a video's transcript + title + description, and
 get a clean, embeddable video ID/URL. One engine: [`youtubei.js`](https://github.com/LuanRT/YouTube.js).
 
-> **Status (v1):** `search`, `info`, and `context` metadata work and return clean
-> JSON + embeddable IDs. **Transcript fetching is a known limitation** — YouTube
-> now requires a PO token on its transcript endpoint, so the bundled `youtubei.js`
-> engine can't retrieve transcript text yet (even from a residential IP). The
-> `transcript` command exists and degrades gracefully (clean error + hint); a
-> pure-TS transcript backend is planned.
+> **Status:** `search`, `info`, `transcript`, and `context` all work — clean JSON,
+> embeddable IDs, and full transcripts (manual + auto-generated captions, any
+> language). Transcripts are fetched via the signed `timedtext` caption URL from
+> the player response, so no PO token / external binary is required.
 
 ## Install
 
@@ -25,8 +23,8 @@ Every command prints a JSON envelope to stdout.
 ```bash
 ytrelay search "agentic engineering" --limit 10
 ytrelay info <id|url>
-ytrelay context <id|url>          # metadata + embed in one shot
-ytrelay transcript <id|url>       # known limitation (PO-token wall) — see Status
+ytrelay transcript <id|url> --lang en
+ytrelay context <id|url>          # metadata + transcript + embed in one shot
 ```
 
 `context` is the primary command: one call returns everything an agent needs to

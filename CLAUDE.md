@@ -84,6 +84,8 @@ run it in unit CI.
 - Requests assume a residential IP (local Claude Code); datacenter/cloud IPs may
   be blocked. A `YTRELAY_PROXY` env var is PLANNED but not yet wired into
   `createEngine` — do not document it as functional until it is implemented.
-- Transcript text is a known limitation in v1 (YouTube PO-token wall); `search`,
-  `info`, and `context` metadata work. A pure-TS transcript backend is the
-  immediate fast-follow.
+- Transcripts work via the signed `timedtext` caption URL from the player
+  response — NOT youtubei.js `info.getTranscript()` (its `get_transcript`
+  endpoint is gated and 400s). The engine MUST be created with
+  `Innertube.create({ generate_session_locally: true })`, otherwise the caption
+  URL is unsigned and returns an empty body. No PO token / external binary needed.

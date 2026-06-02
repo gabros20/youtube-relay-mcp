@@ -6,10 +6,10 @@
  * the network methods (search / getInfo / getTranscript) are intentionally thin
  * and delegate logic to those normalizers.
  */
-import { Innertube, Utils } from 'youtubei.js';
+import { Innertube } from 'youtubei.js';
 
 import { extractVideoId, toEmbedUrl, toWatchUrl } from './ids.ts';
-import type { TranscriptResult, VideoInfo, VideoSummary } from './types.ts';
+import type { TranscriptResult, TranscriptSegment, VideoInfo, VideoSummary } from './types.ts';
 
 // ---------------------------------------------------------------------------
 // Engine interface
@@ -26,10 +26,10 @@ export interface Engine {
 // ---------------------------------------------------------------------------
 
 export async function createEngine(): Promise<Engine> {
-  // TODO: if YTRELAY_PROXY is set, wire it as the client's fetch/agent once
-  // youtubei.js v17 exposes a stable proxy/fetch-override API (non-trivial to
-  // wire safely across all platforms; skipped for now to avoid blocking).
-  const yt = await Innertube.create();
+  // `generate_session_locally` is REQUIRED for transcripts: it makes the player
+  // response return a fully-signed `timedtext` caption URL. Without it the
+  // caption URL is unsigned and returns HTTP 200 with an empty body.
+  const yt = await Innertube.create({ generate_session_locally: true });
 
   return {
     async search(query, opts) {
@@ -46,27 +46,26 @@ export async function createEngine(): Promise<Engine> {
 
     async getTranscript(input, lang) {
       const id = resolveId(input);
-      // getTranscript requires the full getInfo response, not getBasicInfo.
+      // We deliberately AVOID youtubei.js `info.getTranscript()` — its
+      // `get_transcript` InnerTube endpoint is gated by YouTube and returns
+      // HTTP 400. Instead we read the signed caption-track URL from the player
+      // response and fetch the `json3` timedtext directly.
       const info = await yt.getInfo(id);
-      try {
-        const transcriptInfo = await info.getTranscript();
-        const requestedLang = lang ?? transcriptInfo.selectedLanguage;
-        // If a specific language is requested and it differs from the default, switch.
-        const finalInfo =
-          lang && lang !== transcriptInfo.selectedLanguage
-            ? await transcriptInfo.selectLanguage(lang)
-            : transcriptInfo;
-        const segs = finalInfo.transcript?.content?.body?.initial_segments ?? [];
-        return normalizeTranscript(id, segs, requestedLang ?? null);
-      } catch (e: unknown) {
-        // Only the known captionless cases collapse to a null+reason result.
-        // A network-level / IP-block error (e.g. status 400 / 429) re-throws so
-        // the command layer can emit an error envelope with a proxy hint.
-        if (isNoCaptionsError(e)) {
-          return noCaptionsResult(id);
-        }
-        throw e;
+      const tracks = (info.captions?.caption_tracks ?? []) as unknown as RawCaptionTrack[];
+      const track = pickCaptionTrack(tracks, lang);
+      if (!track) return noCaptionsResult(id);
+
+      const url = `${track.base_url}${track.base_url.includes('?') ? '&' : '?'}fmt=json3`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        // Genuine network / IP-block failure — re-throw so the command layer
+        // emits a FETCH_FAILED envelope.
+        throw new Error(`Caption request failed with status ${res.status}`);
       }
+      const body = await res.text();
+      if (!body) return noCaptionsResult(id);
+
+      return parseJson3Transcript(id, JSON.parse(body), track.language_code ?? lang ?? null);
     },
   };
 }
@@ -155,49 +154,72 @@ export function normalizeInfo(id: string, basicInfo: RawBasicInfo): VideoInfo {
 }
 
 /**
- * Structural subset of a TranscriptSegment node.
+ * Structural subset of a caption track from the player response.
  */
-type RawSegment = {
-  type?: string;
-  start_ms: string;
-  end_ms: string;
-  snippet: { toString(): string };
+export type RawCaptionTrack = {
+  base_url: string;
+  language_code?: string;
+  kind?: string; // 'asr' for auto-generated captions
 };
 
 /**
- * Maps raw transcript segments to TranscriptResult.
+ * Picks the best caption track for the requested language.
+ * - With `lang`: an exact `language_code` match, else a base-language match
+ *   (e.g. 'en' matches 'en-US').
+ * - Otherwise (or if the requested language is absent): prefer a manually
+ *   authored track over an auto-generated ('asr') one, else the first track.
+ * Returns undefined only when there are no tracks at all.
  */
-export function normalizeTranscript(
+export function pickCaptionTrack(
+  tracks: RawCaptionTrack[],
+  lang?: string,
+): RawCaptionTrack | undefined {
+  if (tracks.length === 0) return undefined;
+  if (lang) {
+    const want = lang.toLowerCase();
+    const base = want.split('-')[0] ?? want;
+    const match = tracks.find((t) => {
+      const code = (t.language_code ?? '').toLowerCase();
+      return code === want || (code.split('-')[0] ?? code) === base;
+    });
+    if (match) return match;
+  }
+  return tracks.find((t) => t.kind !== 'asr') ?? tracks[0];
+}
+
+/**
+ * Structural subset of a json3 timedtext payload.
+ */
+type Json3 = {
+  events?: Array<{ tStartMs?: number; dDurationMs?: number; segs?: Array<{ utf8?: string }> }>;
+};
+
+/**
+ * Parses a json3 timedtext payload into a TranscriptResult.
+ * Skips events without segments and whitespace-only lines.
+ */
+export function parseJson3Transcript(
   id: string,
-  segs: unknown[],
+  json3: Json3,
   lang: string | null,
 ): TranscriptResult {
-  const segments = segs.filter(isSegmentNode).map((s) => {
-    const startMs = Number.parseInt(s.start_ms, 10);
-    const endMs = Number.parseInt(s.end_ms, 10);
-    return {
-      text: s.snippet.toString(),
-      startMs,
-      durationMs: endMs - startMs,
-    };
-  });
-
-  const transcript = segments.map((s) => s.text).join('\n');
-
+  const segments: TranscriptSegment[] = [];
+  for (const ev of json3.events ?? []) {
+    if (!ev.segs) continue;
+    const text = ev.segs
+      .map((s) => s.utf8 ?? '')
+      .join('')
+      .trim();
+    if (!text) continue;
+    segments.push({ text, startMs: ev.tStartMs ?? 0, durationMs: ev.dDurationMs ?? 0 });
+  }
   return {
     id,
     lang,
     source: 'innertube',
-    transcript,
+    transcript: segments.map((s) => s.text).join('\n'),
     segments,
   };
-}
-
-function isSegmentNode(node: unknown): node is RawSegment {
-  if (typeof node !== 'object' || node === null) return false;
-  const n = node as Record<string, unknown>;
-  // TranscriptSectionHeader nodes don't have start_ms — filter them out.
-  return typeof n.start_ms === 'string' && typeof n.end_ms === 'string';
 }
 
 /**
@@ -228,23 +250,4 @@ export function noCaptionsResult(id: string): TranscriptResult {
     transcript: null,
     reason: 'no captions',
   };
-}
-
-/**
- * Classifies a thrown error as a genuine "video has no captions" case
- * (true → return noCaptionsResult) vs. anything else such as a network /
- * IP-block error (false → re-throw so the command layer surfaces it).
- *
- * youtubei.js v17 throws an `InnertubeError` (exported under the `Utils`
- * namespace) for the captionless cases. The two stable messages are:
- *   - "...Video likely has no transcript." (engagement / transcript panel absent)
- *   - "Transcript continuation not found." (panel present but no segments)
- *
- * Deliberately NOT treated as no-captions: "Cannot get transcript from basic
- * video info." — that is a coding error (wrong info object) and must throw.
- */
-export function isNoCaptionsError(e: unknown): boolean {
-  if (!(e instanceof Utils.InnertubeError)) return false;
-  const msg = e.message;
-  return msg.includes('likely has no transcript') || msg === 'Transcript continuation not found.';
 }

@@ -11,7 +11,7 @@ Use this when you need to find YouTube videos, pull a video's title/description,
 - ✅ **search** — works.
 - ✅ **info** — title, description, channel, duration, embeddable id — works.
 - ✅ **context** — returns the full metadata + embed for a video (the transcript portion is currently degraded, see below) — works.
-- ⚠️ **transcript** — **known limitation.** YouTube now requires a PO token on its transcript endpoint, so the bundled `youtubei.js` engine returns an error (HTTP 400 / empty) even from a residential IP. The command exists and degrades gracefully (clean error + hint), but does not return transcript text yet. A pure-TS transcript backend is planned. **Do not rely on transcript output for now** — use `search`/`info`/`context` for metadata and embedding.
+- ✅ **transcript** — works (manual and auto-generated captions, any language). Returns the full text plus timestamped segments. Fetched via the signed `timedtext` caption URL from the player response (NOT the gated `get_transcript` endpoint), so no PO token is needed.
 
 ## Install
 
@@ -114,29 +114,26 @@ ytrelay context <id|url> [--lang xx]
     "embedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
     "transcript": {
       "id": "dQw4w9WgXcQ",
-      "lang": null,
-      "source": null,
-      "transcript": null,
-      "reason": "transcript unavailable (known limitation — YouTube requires a PO token): ..."
+      "lang": "en",
+      "source": "innertube",
+      "transcript": "We're no strangers to love ..."
     }
   }
 }
 ```
 
-When transcripts work, `transcript.transcript` is the text, `transcript.source` is `"innertube"`, and `transcript.lang` is set.
+If a video has no captions, `transcript.transcript` is `null` with a `reason` — `context` still returns full metadata + embed.
 
 ---
 
-### transcript (known limitation — see Status)
+### transcript
 
 ```
 ytrelay transcript <id|url> [--lang xx] [--format text|json]
 ```
 
-- `--lang xx` — preferred caption language (BCP-47).
+- `--lang xx` — preferred caption language (BCP-47); falls back to a manual track, else the first available.
 - `--format text|json` — `json` (default) includes a `segments` array (`{ text, startMs, durationMs }`); `text` returns the transcript string only (omits `segments`).
-
-Currently returns a `FETCH_FAILED` error (PO-token limitation). Intended success shape:
 
 ```json
 {
@@ -166,19 +163,19 @@ Every video result includes `embedUrl` in the form `https://www.youtube.com/embe
   "command": "transcript",
   "error": {
     "code": "FETCH_FAILED",
-    "message": "Request to .../get_transcript ... failed with status code 400",
-    "hint": "Transcript fetching is a known limitation (YouTube requires a PO token ...) — search, info, and metadata work normally."
+    "message": "This video is unavailable",
+    "hint": "From a datacenter/cloud IP, YouTube may block requests — run from a residential network."
   }
 }
 ```
 
 Error codes:
 - `INVALID_INPUT` — empty query, or a target that isn't a valid YouTube id/URL. No network call is made.
-- `FETCH_FAILED` — the request to YouTube failed. For `search`/`info` this usually means a network/IP block (run from a residential network); for `transcript`/`context` it is the PO-token limitation above.
+- `FETCH_FAILED` — the request to YouTube failed (video unavailable/private, or a network/IP block). Run from a residential network if you're on a datacenter IP.
 - `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — the tool/command name isn't recognized.
 
 ## Failure modes
 
-- **Transcript PO-token wall** — transcript text is currently unavailable (see Status); `info`/`search`/`context` metadata are unaffected.
-- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block even search/info; run from a residential network. (A built-in proxy option is planned, not yet wired.)
+- **No captions** — a video without caption tracks returns `ok: true` with `transcript: null` and a `reason` (not an error). `context` still returns full metadata + embed.
+- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block requests; run from a residential network. (A built-in proxy option is planned, not yet wired.)
 - **Invalid id or URL** — returns `INVALID_INPUT` before any network call.

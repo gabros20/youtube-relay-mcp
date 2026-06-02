@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { Utils } from 'youtubei.js';
 import {
   formatDuration,
-  isNoCaptionsError,
   noCaptionsResult,
   normalizeInfo,
   normalizeSearchResults,
-  normalizeTranscript,
+  parseJson3Transcript,
+  pickCaptionTrack,
 } from '../src/youtube';
 
 const RICK = 'dQw4w9WgXcQ';
@@ -68,16 +67,6 @@ function makeBasicInfo(overrides?: {
       url: 'http://www.youtube.com/@RickAstleyYT',
     },
     ...overrides,
-  };
-}
-
-/** TranscriptSegment node */
-function makeSegNode(startMs: number, endMs: number, text: string) {
-  return {
-    type: 'TranscriptSegment',
-    start_ms: String(startMs),
-    end_ms: String(endMs),
-    snippet: { toString: () => text },
   };
 }
 
@@ -206,42 +195,85 @@ describe('normalizeInfo', () => {
 });
 
 // ---------------------------------------------------------------------------
-// normalizeTranscript
+// pickCaptionTrack
 // ---------------------------------------------------------------------------
-describe('normalizeTranscript', () => {
-  test('joins multiple segments into full transcript text', () => {
-    const segs = [
-      makeSegNode(0, 3000, 'Hello'),
-      makeSegNode(3000, 6000, 'world'),
-      makeSegNode(6000, 9000, 'foo'),
-    ];
-    const r = normalizeTranscript(RICK, segs, 'en');
-    expect(r.transcript).toBe('Hello\nworld\nfoo');
+describe('pickCaptionTrack', () => {
+  const en = { base_url: 'u-en', language_code: 'en' };
+  const enUS = { base_url: 'u-enus', language_code: 'en-US' };
+  const es = { base_url: 'u-es', language_code: 'es' };
+  const asrEn = { base_url: 'u-asr', language_code: 'en', kind: 'asr' };
+  const manualFr = { base_url: 'u-fr', language_code: 'fr' };
+
+  test('returns undefined for no tracks', () => {
+    expect(pickCaptionTrack([], 'en')).toBeUndefined();
   });
 
-  test('single segment produces correct text', () => {
-    const r = normalizeTranscript(RICK, [makeSegNode(0, 5000, 'Just one line')], 'en');
-    expect(r.transcript).toBe('Just one line');
+  test('exact language_code match wins', () => {
+    expect(pickCaptionTrack([en, es], 'es')?.base_url).toBe('u-es');
   });
 
-  test('segments have correct startMs and durationMs', () => {
-    const segs = [makeSegNode(1000, 4500, 'Test')];
-    const r = normalizeTranscript(RICK, segs, 'en');
+  test('base-language match (en matches en-US)', () => {
+    expect(pickCaptionTrack([enUS, es], 'en')?.base_url).toBe('u-enus');
+  });
+
+  test('no lang requested → prefers a manual track over asr', () => {
+    expect(pickCaptionTrack([asrEn, manualFr])?.base_url).toBe('u-fr');
+  });
+
+  test('requested lang absent → falls back to a manual track (still returns one)', () => {
+    expect(pickCaptionTrack([asrEn, manualFr], 'de')?.base_url).toBe('u-fr');
+  });
+
+  test('all asr and no lang → returns first', () => {
+    const asrA = { base_url: 'a', language_code: 'en', kind: 'asr' };
+    const asrB = { base_url: 'b', language_code: 'fr', kind: 'asr' };
+    expect(pickCaptionTrack([asrA, asrB])?.base_url).toBe('a');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseJson3Transcript
+// ---------------------------------------------------------------------------
+describe('parseJson3Transcript', () => {
+  const make = (events: unknown[]) => ({ events });
+
+  test('maps events with segs to segments and joins text', () => {
+    const j = make([
+      { tStartMs: 0, dDurationMs: 1680, segs: [{ utf8: 'Hello' }] },
+      { tStartMs: 1680, dDurationMs: 2000, segs: [{ utf8: 'world' }, { utf8: '!' }] },
+    ]);
+    const r = parseJson3Transcript(RICK, j, 'en');
+    expect(r.transcript).toBe('Hello\nworld!');
+    expect(r.segments).toHaveLength(2);
+    expect(r.segments![0]!).toEqual({ text: 'Hello', startMs: 0, durationMs: 1680 });
+    expect(r.segments![1]!.text).toBe('world!');
+  });
+
+  test('skips events without segs (window/format events)', () => {
+    const j = make([{ tStartMs: 0 }, { tStartMs: 10, dDurationMs: 5, segs: [{ utf8: 'hi' }] }]);
+    expect(parseJson3Transcript(RICK, j, 'en').segments).toHaveLength(1);
+  });
+
+  test('skips whitespace-only segments', () => {
+    const j = make([
+      { tStartMs: 0, dDurationMs: 5, segs: [{ utf8: '\n' }] },
+      { tStartMs: 5, dDurationMs: 5, segs: [{ utf8: 'real' }] },
+    ]);
+    const r = parseJson3Transcript(RICK, j, 'en');
     expect(r.segments).toHaveLength(1);
-    expect(r.segments![0]!.startMs).toBe(1000);
-    expect(r.segments![0]!.durationMs).toBe(3500); // 4500 - 1000
-    expect(r.segments![0]!.text).toBe('Test');
+    expect(r.transcript).toBe('real');
   });
 
-  test('sets source to innertube and lang correctly', () => {
-    const r = normalizeTranscript(RICK, [makeSegNode(0, 1000, 'hi')], 'fr');
+  test('missing dDurationMs → durationMs 0', () => {
+    const j = make([{ tStartMs: 100, segs: [{ utf8: 'x' }] }]);
+    expect(parseJson3Transcript(RICK, j, 'en').segments![0]!.durationMs).toBe(0);
+  });
+
+  test('sets id, source=innertube, and lang', () => {
+    const r = parseJson3Transcript(RICK, make([]), 'fr');
+    expect(r.id).toBe(RICK);
     expect(r.source).toBe('innertube');
     expect(r.lang).toBe('fr');
-    expect(r.id).toBe(RICK);
-  });
-
-  test('empty segments array produces empty transcript', () => {
-    const r = normalizeTranscript(RICK, [], 'en');
     expect(r.transcript).toBe('');
     expect(r.segments).toHaveLength(0);
   });
@@ -258,45 +290,5 @@ describe('noCaptionsResult', () => {
     expect(r.source).toBeNull();
     expect(r.transcript).toBeNull();
     expect(r.reason).toBe('no captions');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isNoCaptionsError
-// ---------------------------------------------------------------------------
-describe('isNoCaptionsError', () => {
-  test('true for "Engagement panels not found. Video likely has no transcript."', () => {
-    const e = new Utils.InnertubeError(
-      'Engagement panels not found. Video likely has no transcript.',
-    );
-    expect(isNoCaptionsError(e)).toBe(true);
-  });
-
-  test('true for "Transcript panel not found. Video likely has no transcript."', () => {
-    const e = new Utils.InnertubeError(
-      'Transcript panel not found. Video likely has no transcript.',
-    );
-    expect(isNoCaptionsError(e)).toBe(true);
-  });
-
-  test('true for exactly "Transcript continuation not found."', () => {
-    const e = new Utils.InnertubeError('Transcript continuation not found.');
-    expect(isNoCaptionsError(e)).toBe(true);
-  });
-
-  test('false for a generic network error (HTTP 429)', () => {
-    const e = new Error('HTTP 429 Too Many Requests');
-    expect(isNoCaptionsError(e)).toBe(false);
-  });
-
-  test('false for "Cannot get transcript from basic video info." (coding error, must throw)', () => {
-    const e = new Utils.InnertubeError('Cannot get transcript from basic video info.');
-    expect(isNoCaptionsError(e)).toBe(false);
-  });
-
-  test('false for a plain non-error value', () => {
-    expect(isNoCaptionsError('Transcript continuation not found.')).toBe(false);
-    expect(isNoCaptionsError(null)).toBe(false);
-    expect(isNoCaptionsError(undefined)).toBe(false);
   });
 });

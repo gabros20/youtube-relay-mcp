@@ -63,14 +63,13 @@ describe('runTranscript', () => {
     expect(calls.getTranscript).toHaveLength(0);
   });
 
-  test('engine throws -> FETCH_FAILED with transcript-limitation hint', async () => {
+  test('engine throws -> FETCH_FAILED with network hint', async () => {
     const { engine } = makeFakeEngine({ transcriptThrows: new Error('status code 400') });
     const result = await runTranscript(engine, { target: 'dQw4w9WgXcQ' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe('FETCH_FAILED');
-      expect(result.error.hint).toContain('known limitation');
-      expect(result.error.hint).toContain('PO token');
+      expect(result.error.hint).toContain('residential');
     }
   });
 });

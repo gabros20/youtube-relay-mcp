@@ -2,7 +2,7 @@ import { extractVideoId } from '../ids.ts';
 import { err, ok } from '../output.ts';
 import type { Envelope, TranscriptResult } from '../types.ts';
 import type { Engine } from '../youtube.ts';
-import { TRANSCRIPT_HINT, errorMessage } from './_shared.ts';
+import { PROXY_HINT, errorMessage } from './_shared.ts';
 
 export async function runTranscript(
   engine: Engine,
@@ -24,6 +24,6 @@ export async function runTranscript(
 
     return ok('transcript', t);
   } catch (e) {
-    return err('transcript', 'FETCH_FAILED', errorMessage(e), TRANSCRIPT_HINT);
+    return err('transcript', 'FETCH_FAILED', errorMessage(e), PROXY_HINT);
   }
 }
