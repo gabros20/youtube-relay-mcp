@@ -37,7 +37,8 @@ export const COMMANDS: CommandMeta[] = [
       },
       {
         flag: '--format text|json',
-        description: 'Output format: plain text or JSON segments (default: text).',
+        description:
+          'Output format: json includes timestamped segments, text is the string only (default: json).',
       },
     ],
     example: 'ytrelay transcript dQw4w9WgXcQ --lang en --format json',

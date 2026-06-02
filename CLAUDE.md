@@ -81,5 +81,9 @@ run it in unit CI.
   summarization (the agent reasons over what this returns).
 - The CLI requires no API keys or secrets. Publishing uses the `NPM_TOKEN` GitHub
   Actions secret only.
-- Transcript fetching assumes a residential IP (local Claude Code). For a cloud
-  sandbox, honor an optional `YTRELAY_PROXY` env var; do not hard-depend on it.
+- Requests assume a residential IP (local Claude Code); datacenter/cloud IPs may
+  be blocked. A `YTRELAY_PROXY` env var is PLANNED but not yet wired into
+  `createEngine` — do not document it as functional until it is implemented.
+- Transcript text is a known limitation in v1 (YouTube PO-token wall); `search`,
+  `info`, and `context` metadata work. A pure-TS transcript backend is the
+  immediate fast-follow.

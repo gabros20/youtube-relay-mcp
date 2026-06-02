@@ -39,7 +39,7 @@ describe('runInfo', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('FETCH_FAILED');
       expect(result.error.message).toContain('HTTP 429');
-      expect(result.error.hint).toContain('YTRELAY_PROXY');
+      expect(result.error.hint).toContain('residential');
     }
   });
 });

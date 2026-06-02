@@ -1,5 +1,5 @@
 export const PROXY_HINT =
-  'If running in a cloud sandbox, YouTube may block datacenter IPs — set YTRELAY_PROXY to a residential proxy.';
+  'From a datacenter/cloud IP, YouTube may block requests — run from a residential network.';
 
 // Transcript fetching is a known limitation: YouTube's get_transcript endpoint
 // and timedtext caption URLs now require a PO token, so the bundled youtubei.js

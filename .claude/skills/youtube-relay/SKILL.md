@@ -19,7 +19,7 @@ Use this when you need to find YouTube videos, pull a video's title/description,
 npm i -g youtube-relay-mcp
 ```
 
-After installation the `ytrelay` binary is available globally. Transcripts and metadata require a normal (non-datacenter) network; from a cloud sandbox set `YTRELAY_PROXY` to a residential proxy URL.
+After installation the `ytrelay` binary is available globally. Requests work best from a normal (residential) network; datacenter/cloud IPs are more likely to be blocked by YouTube.
 
 ## Commands
 
@@ -134,7 +134,7 @@ ytrelay transcript <id|url> [--lang xx] [--format text|json]
 ```
 
 - `--lang xx` — preferred caption language (BCP-47).
-- `--format text|json` — `text` (default) returns the transcript string only; `json` includes a `segments` array (`{ text, startMs, durationMs }`).
+- `--format text|json` — `json` (default) includes a `segments` array (`{ text, startMs, durationMs }`); `text` returns the transcript string only (omits `segments`).
 
 Currently returns a `FETCH_FAILED` error (PO-token limitation). Intended success shape:
 
@@ -174,11 +174,11 @@ Every video result includes `embedUrl` in the form `https://www.youtube.com/embe
 
 Error codes:
 - `INVALID_INPUT` — empty query, or a target that isn't a valid YouTube id/URL. No network call is made.
-- `FETCH_FAILED` — the request to YouTube failed. For `search`/`info` this usually means a network/IP block (try `YTRELAY_PROXY`); for `transcript`/`context` it is the PO-token limitation above.
+- `FETCH_FAILED` — the request to YouTube failed. For `search`/`info` this usually means a network/IP block (run from a residential network); for `transcript`/`context` it is the PO-token limitation above.
 - `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — the tool/command name isn't recognized.
 
 ## Failure modes
 
 - **Transcript PO-token wall** — transcript text is currently unavailable (see Status); `info`/`search`/`context` metadata are unaffected.
-- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block even search/info; set `YTRELAY_PROXY` to a residential proxy URL.
+- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block even search/info; run from a residential network. (A built-in proxy option is planned, not yet wired.)
 - **Invalid id or URL** — returns `INVALID_INPUT` before any network call.

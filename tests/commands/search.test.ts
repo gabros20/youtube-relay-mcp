@@ -59,7 +59,7 @@ describe('runSearch', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('FETCH_FAILED');
       expect(result.error.message).toContain('network error');
-      expect(result.error.hint).toContain('YTRELAY_PROXY');
+      expect(result.error.hint).toContain('residential');
     }
   });
 });
