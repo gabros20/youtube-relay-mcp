@@ -58,7 +58,7 @@ export function stubInfo(id: string): VideoInfo {
 export function stubTranscript(id: string, lang: string | null): TranscriptResult {
   return {
     id,
-    lang: lang ?? 'en',
+    lang: lang,
     source: 'innertube',
     transcript: 'Hello world',
     segments: [{ text: 'Hello world', startMs: 0, durationMs: 1000 }],

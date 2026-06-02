@@ -30,6 +30,8 @@ describe('runContext', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.title).toBe(info.title);
+      expect(result.data.url).toBe(info.url);
+      expect(result.data.embedUrl).toBe(info.embedUrl);
       expect(result.data.transcript.transcript).toBeNull();
       expect(result.data.transcript.reason).toContain('transcript fetch failed');
     }
