@@ -1,0 +1,33 @@
+# Build output
+dist/
+src/generated/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Caches
+.cache
+*.tsbuildinfo
+.npm
+
+# Coverage
+coverage
+*.lcov
+
+# Dependencies
+node_modules/
+
+# Output of 'npm pack'
+*.tgz
+
+# dotenv
+.env
+.env.*.local
+.env.local
+
+# Editors / OS
+.idea
+.vscode-test
+.DS_Store
