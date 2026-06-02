@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { runContext, runInfo, runSearch, runTranscript } from './commands/index.ts';
 import { COMMANDS, commandNames } from './commands/registry.ts';
 import { err, toJson } from './output.ts';
@@ -65,7 +66,7 @@ export function parseArgs(argv: string[]): ParsedCommand {
   if (first === 'transcript') {
     const { positionals, flags } = tokenize(rest);
     const target = positionals[0] ?? '';
-    const lang = flags['--lang'];
+    const lang = flags['--lang'] || undefined;
     const format = flags['--format'];
     return { kind: 'command', command: 'transcript', opts: { target, lang, format } };
   }
@@ -73,7 +74,7 @@ export function parseArgs(argv: string[]): ParsedCommand {
   // context
   const { positionals, flags } = tokenize(rest);
   const target = positionals[0] ?? '';
-  const lang = flags['--lang'];
+  const lang = flags['--lang'] || undefined;
   return { kind: 'command', command: 'context', opts: { target, lang } };
 }
 
@@ -207,14 +208,12 @@ async function main(): Promise<void> {
 
 // Guard: only run main when executed as the entry point (not when imported).
 // import.meta.main is true in Bun when the file is the program entry; in Node/tsup
-// we fall back to comparing process.argv[1] to the module URL.
-if (
-  // biome-ignore lint/suspicious/noExplicitAny: Bun-specific property
-  (import.meta as any).main === true ||
-  // Node fallback: process.argv[1] matches this file (handles both .ts source and dist/cli.js)
-  (typeof process !== 'undefined' &&
-    process.argv[1] !== undefined &&
-    (process.argv[1].endsWith('/cli.ts') || process.argv[1].endsWith('/cli.js')))
-) {
+// we fall back to an OS-native absolute-path comparison (Windows-safe — no
+// hard-coded forward-slash suffix matching).
+const isEntry =
+  import.meta.main === true ||
+  (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]);
+
+if (isEntry) {
   void main();
 }

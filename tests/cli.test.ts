@@ -93,6 +93,24 @@ describe('parseArgs', () => {
       opts: { target: 'abc123', lang: undefined, format: undefined },
     });
   });
+
+  test('transcript --lang with no value → lang undefined, not empty string', () => {
+    const result = parseArgs(['transcript', 'ID', '--lang']);
+    expect(result).toEqual({
+      kind: 'command',
+      command: 'transcript',
+      opts: { target: 'ID', lang: undefined, format: undefined },
+    });
+  });
+
+  test('context --lang with no value → lang undefined, not empty string', () => {
+    const result = parseArgs(['context', 'ID', '--lang']);
+    expect(result).toEqual({
+      kind: 'command',
+      command: 'context',
+      opts: { target: 'ID', lang: undefined },
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -205,5 +223,11 @@ describe('run', () => {
     const envelope = JSON.parse(stdout);
     expect(envelope.ok).toBe(true);
     expect(envelope.command).toBe('context');
+  });
+
+  test('transcript --lang with no value does not forward an empty language code', async () => {
+    const { engine, calls } = makeFakeEngine();
+    await run(['transcript', 'dQw4w9WgXcQ', '--lang'], engine);
+    expect(calls.getTranscript[0]?.lang).toBeUndefined();
   });
 });
