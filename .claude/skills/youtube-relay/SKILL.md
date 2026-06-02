@@ -1,6 +1,17 @@
 # youtube-relay-mcp
 
-A code-execution YouTube tool for AI agents. Wraps `youtubei.js` to search YouTube, fetch video metadata and transcripts, and return embeddable video IDs. Designed for use as a CLI, an MCP tool, or a Claude Code skill.
+A code-execution YouTube tool for AI agents. Wraps `youtubei.js` to **search YouTube**, **fetch video metadata** (title, description, channel, duration), and return an **embeddable video ID/URL**. Usable as a CLI (`ytrelay`), an MCP server, or a Claude Code skill.
+
+## When to use
+
+Use this when you need to find YouTube videos, pull a video's title/description, or get a clean embeddable video ID/URL to render or cite a video.
+
+## Status / what works today
+
+- ✅ **search** — works.
+- ✅ **info** — title, description, channel, duration, embeddable id — works.
+- ✅ **context** — returns the full metadata + embed for a video (the transcript portion is currently degraded, see below) — works.
+- ⚠️ **transcript** — **known limitation.** YouTube now requires a PO token on its transcript endpoint, so the bundled `youtubei.js` engine returns an error (HTTP 400 / empty) even from a residential IP. The command exists and degrades gracefully (clean error + hint), but does not return transcript text yet. A pure-TS transcript backend is planned. **Do not rely on transcript output for now** — use `search`/`info`/`context` for metadata and embedding.
 
 ## Install
 
@@ -8,31 +19,26 @@ A code-execution YouTube tool for AI agents. Wraps `youtubei.js` to search YouTu
 npm i -g youtube-relay-mcp
 ```
 
-After installation the `ytrelay` binary is available globally.
+After installation the `ytrelay` binary is available globally. Transcripts and metadata require a normal (non-datacenter) network; from a cloud sandbox set `YTRELAY_PROXY` to a residential proxy URL.
 
 ## Commands
 
-All commands print a JSON envelope to stdout. Exit code is 0 on success, 1 on error.
+All commands print a JSON envelope to stdout (`{ ok, command, data }` on success, `{ ok:false, command, error }` on failure). Library/parser warnings from `youtubei.js` go to **stderr** only — stdout is always clean JSON. Exit code: 0 on success, 1 on a command error, 2 on an unknown command.
 
 ---
 
 ### search
 
-Search YouTube and return a list of video summaries.
-
 ```
 ytrelay search "<query>" [--limit N]
 ```
 
-**Options**
-- `--limit N` — maximum number of results (default: 5)
+- `--limit N` — maximum number of results (default 5).
 
-**Example**
 ```
 ytrelay search "bun runtime intro" --limit 3
 ```
 
-**Response envelope**
 ```json
 {
   "ok": true,
@@ -50,22 +56,22 @@ ytrelay search "bun runtime intro" --limit 3
 }
 ```
 
+`channel` and `duration` may be `null` for some result types.
+
 ---
 
 ### info
-
-Fetch title, description, channel, and duration for a single video.
 
 ```
 ytrelay info <id|url>
 ```
 
-**Example**
+Accepts a bare 11-char id or any YouTube URL form (`watch?v=`, `youtu.be/`, `/embed/`, `/shorts/`).
+
 ```
-ytrelay info dQw4w9WgXcQ
+ytrelay info https://youtu.be/dQw4w9WgXcQ
 ```
 
-**Response envelope**
 ```json
 {
   "ok": true,
@@ -73,7 +79,7 @@ ytrelay info dQw4w9WgXcQ
   "data": {
     "id": "dQw4w9WgXcQ",
     "title": "Never Gonna Give You Up",
-    "description": "The official video for \"Never Gonna Give You Up\" ...",
+    "description": "The official video for ...",
     "channel": "Rick Astley",
     "duration": "3:33",
     "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -84,59 +90,16 @@ ytrelay info dQw4w9WgXcQ
 
 ---
 
-### transcript
+### context — the primary command
 
-Fetch the transcript for a video, optionally in a specific language and format.
-
-```
-ytrelay transcript <id|url> [--lang xx] [--format text|json]
-```
-
-**Options**
-- `--lang xx` — BCP-47 language code for the caption track (default: auto)
-- `--format text|json` — plain concatenated text or JSON segments with timestamps (default: text)
-
-**Example**
-```
-ytrelay transcript dQw4w9WgXcQ --lang en --format json
-```
-
-**Response envelope**
-```json
-{
-  "ok": true,
-  "command": "transcript",
-  "data": {
-    "id": "dQw4w9WgXcQ",
-    "lang": "en",
-    "source": "innertube",
-    "transcript": "Never gonna give you up ...",
-    "segments": [
-      { "text": "Never gonna give you up", "startMs": 18400, "durationMs": 2000 }
-    ]
-  }
-}
-```
-
----
-
-### context
-
-Fetch video info and transcript together in a single call.
+Fetch metadata + transcript together in one call. Even when the transcript is unavailable (current limitation), this still returns full metadata and the embed URL — the transcript object carries a `reason`.
 
 ```
 ytrelay context <id|url> [--lang xx]
 ```
 
-**Options**
-- `--lang xx` — BCP-47 language code for the caption track (default: auto)
+- `--lang xx` — preferred caption language (BCP-47), when transcripts are available.
 
-**Example**
-```
-ytrelay context dQw4w9WgXcQ --lang en
-```
-
-**Response envelope**
 ```json
 {
   "ok": true,
@@ -151,10 +114,40 @@ ytrelay context dQw4w9WgXcQ --lang en
     "embedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
     "transcript": {
       "id": "dQw4w9WgXcQ",
-      "lang": "en",
-      "source": "innertube",
-      "transcript": "Never gonna give you up ..."
+      "lang": null,
+      "source": null,
+      "transcript": null,
+      "reason": "transcript unavailable (known limitation — YouTube requires a PO token): ..."
     }
+  }
+}
+```
+
+When transcripts work, `transcript.transcript` is the text, `transcript.source` is `"innertube"`, and `transcript.lang` is set.
+
+---
+
+### transcript (known limitation — see Status)
+
+```
+ytrelay transcript <id|url> [--lang xx] [--format text|json]
+```
+
+- `--lang xx` — preferred caption language (BCP-47).
+- `--format text|json` — `text` (default) returns the transcript string only; `json` includes a `segments` array (`{ text, startMs, durationMs }`).
+
+Currently returns a `FETCH_FAILED` error (PO-token limitation). Intended success shape:
+
+```json
+{
+  "ok": true,
+  "command": "transcript",
+  "data": {
+    "id": "dQw4w9WgXcQ",
+    "lang": "en",
+    "source": "innertube",
+    "transcript": "Never gonna give you up ...",
+    "segments": [{ "text": "Never gonna give you up", "startMs": 18400, "durationMs": 2000 }]
   }
 }
 ```
@@ -163,33 +156,29 @@ ytrelay context dQw4w9WgXcQ --lang en
 
 ## Embed rule
 
-Every response that includes a video always provides `embedUrl` in the form:
-
-```
-https://www.youtube.com/embed/<id>
-```
-
-Use this URL to render the video in an iframe or pass it to any tool that accepts an embed URL.
+Every video result includes `embedUrl` in the form `https://www.youtube.com/embed/<id>`. Use it directly in an `<iframe>` or any embed-accepting surface. The bare `id` and the watch `url` are also always provided.
 
 ## Error envelope
-
-On failure the envelope has `ok: false`:
 
 ```json
 {
   "ok": false,
   "command": "transcript",
   "error": {
-    "code": "NO_CAPTIONS",
-    "message": "No caption tracks found for this video.",
-    "hint": "Try a different language with --lang, or use the info command to confirm the video exists."
+    "code": "FETCH_FAILED",
+    "message": "Request to .../get_transcript ... failed with status code 400",
+    "hint": "Transcript fetching is a known limitation (YouTube requires a PO token ...) — search, info, and metadata work normally."
   }
 }
 ```
 
+Error codes:
+- `INVALID_INPUT` — empty query, or a target that isn't a valid YouTube id/URL. No network call is made.
+- `FETCH_FAILED` — the request to YouTube failed. For `search`/`info` this usually means a network/IP block (try `YTRELAY_PROXY`); for `transcript`/`context` it is the PO-token limitation above.
+- `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — the tool/command name isn't recognized.
+
 ## Failure modes
 
-- **Captionless video** — if the video has no caption tracks, `transcript` will be `null` and `reason` will explain why.
-- **Cloud/sandbox IP block** — YouTube may rate-limit or block requests from data-centre IPs. Set the `YTRELAY_PROXY` environment variable to an HTTP/SOCKS proxy URL to route requests through a residential IP.
-- **Private or age-gated video** — `info` and `context` will return an error with code `UNAVAILABLE`.
-- **Invalid ID or URL** — any command will return an error with code `INVALID_ID` before making a network request.
+- **Transcript PO-token wall** — transcript text is currently unavailable (see Status); `info`/`search`/`context` metadata are unaffected.
+- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block even search/info; set `YTRELAY_PROXY` to a residential proxy URL.
+- **Invalid id or URL** — returns `INVALID_INPUT` before any network call.

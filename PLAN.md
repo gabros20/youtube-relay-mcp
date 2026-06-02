@@ -161,5 +161,16 @@ real-call smoke test is kept separate.
 
 ## Status
 
-Design locked via grill. Executing Phase 0 onward with
-subagent-driven-development + TDD, one phase = one Conventional commit.
+v1 built via subagent-driven-development + TDD (110 tests). `search`, `info`, and
+`context` metadata work live; CLI + MCP shim verified end-to-end (real video
+fetch + MCP `initialize` handshake).
+
+**Transcript deferred (known limitation).** YouTube now requires a PO token on
+its `get_transcript` endpoint and on timedtext caption URLs, so the bundled
+`youtubei.js` engine returns HTTP 400 / empty even from a residential IP
+(confirmed concretely; `yt-dlp` still works locally, proving it's a PO-token
+issue, not an outage). The `transcript` command and `context`'s transcript field
+are wired and degrade gracefully (clean `FETCH_FAILED` + honest hint). v1 ships
+without working transcript text. **Next:** research a pure-TS transcript backend
+(PO-token generation via botguard, or a caption-URL path with the required
+`pot` param) — tracked as the immediate fast-follow.
