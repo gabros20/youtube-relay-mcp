@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.0.0...v1.1.0) (2026-06-02)
+
+
+### Features
+
+* fetch transcripts via signed timedtext caption URL (no PO token) ([59093ac](https://github.com/gabros20/youtube-relay-mcp/commit/59093ac95c0fbd74bd5f1b3d0d7ee30d6524ab5f))
+
 # 1.0.0 (2026-06-02)
 
 
