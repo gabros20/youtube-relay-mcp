@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildSearchFilters,
   formatDuration,
   noCaptionsResult,
   normalizeInfo,
@@ -16,28 +17,43 @@ const EMBED_URL = `https://www.youtube.com/embed/${RICK}`;
 // Fixtures shaped like the real youtubei.js output (derived from probe)
 // ---------------------------------------------------------------------------
 
-/** Minimal Video node shape returned in search results */
+/** Minimal Video node shape returned in search results (v1.2 enriched). */
 function makeVideoNode(overrides?: {
   video_id?: string;
   title?: string;
   authorName?: string | null;
+  verified?: boolean;
   durationText?: string | null;
-  durationSeconds?: number;
+  viewCountText?: string | null;
+  shortViewCountText?: string | null;
+  published?: string | null;
+  snippet?: string | null;
+  badges?: string[];
 }) {
   const o = {
     video_id: RICK,
     title: 'Rick Astley - Never Gonna Give You Up',
-    authorName: 'Rick Astley',
-    durationText: '3:34',
-    durationSeconds: 214,
+    authorName: 'Rick Astley' as string | null,
+    verified: true,
+    durationText: '3:34' as string | null,
+    viewCountText: '1,600,000,000 views' as string | null,
+    shortViewCountText: '1.6B views' as string | null,
+    published: '15 years ago' as string | null,
+    snippet: 'The official video for Never Gonna Give You Up.' as string | null,
+    badges: ['4K'],
     ...overrides,
   };
   return {
     type: 'Video',
     video_id: o.video_id,
     title: { toString: () => o.title },
-    author: o.authorName !== null ? { name: o.authorName } : null,
-    duration: o.durationText !== null ? { text: o.durationText, seconds: o.durationSeconds } : null,
+    author: o.authorName !== null ? { name: o.authorName, is_verified: o.verified } : null,
+    duration: o.durationText !== null ? { text: o.durationText } : null,
+    view_count: o.viewCountText,
+    short_view_count: o.shortViewCountText,
+    published: o.published,
+    snippets: o.snippet !== null ? [{ text: o.snippet }] : null,
+    badges: o.badges.map((label) => ({ label })),
   };
 }
 
@@ -46,26 +62,28 @@ function makeShelfNode() {
   return { type: 'Shelf', title: 'Related videos' };
 }
 
-/** basic_info shape from getBasicInfo / getInfo */
-function makeBasicInfo(overrides?: {
-  id?: string;
-  title?: string;
-  short_description?: string;
-  author?: string;
-  duration?: number;
-  channel?: { id: string; name: string; url: string } | null;
-}) {
+/** Flat RawInfo shape the engine passes to normalizeInfo (v1.2). */
+function makeRawInfo(
+  overrides?: Partial<{
+    title: string;
+    description: string;
+    channel: string | null;
+    durationSeconds: number | null;
+    viewCount: number | null;
+    published: string | null;
+    verified: boolean;
+    captionLanguages: string[];
+  }>,
+) {
   return {
-    id: RICK,
     title: 'Rick Astley - Never Gonna Give You Up (Official Video)',
-    short_description: 'The official video for "Never Gonna Give You Up".',
-    author: 'Rick Astley',
-    duration: 213,
-    channel: {
-      id: 'UCuAXFkgsw1L7xaCfnd5JJOw',
-      name: 'Rick Astley',
-      url: 'http://www.youtube.com/@RickAstleyYT',
-    },
+    description: 'The official video for "Never Gonna Give You Up".\n0:00 Intro\n1:30 The drop',
+    channel: 'Rick Astley',
+    durationSeconds: 213,
+    viewCount: 1_600_000_000,
+    published: 'Oct 25, 2009',
+    verified: true,
+    captionLanguages: ['en', 'es'],
     ...overrides,
   };
 }
@@ -151,46 +169,102 @@ describe('normalizeSearchResults', () => {
     const r = normalizeSearchResults([makeVideoNode({ durationText: null })], 10);
     expect(r[0]!.duration).toBeNull();
   });
+
+  test('surfaces enriched quality signals', () => {
+    const r = normalizeSearchResults([makeVideoNode()], 10)[0]!;
+    expect(r.viewCount).toBe(1_600_000_000);
+    expect(r.viewCountText).toBe('1.6B views');
+    expect(r.published).toBe('15 years ago');
+    expect(r.verified).toBe(true);
+    expect(r.descriptionSnippet).toBe('The official video for Never Gonna Give You Up.');
+    expect(r.badges).toEqual(['4K']);
+  });
+
+  test('handles missing signals (no snippet, unverified, no views)', () => {
+    const node = makeVideoNode({
+      verified: false,
+      snippet: null,
+      viewCountText: null,
+      shortViewCountText: null,
+      published: null,
+      badges: [],
+    });
+    const r = normalizeSearchResults([node], 10)[0]!;
+    expect(r.verified).toBe(false);
+    expect(r.descriptionSnippet).toBeNull();
+    expect(r.viewCount).toBeNull();
+    expect(r.published).toBeNull();
+    expect(r.badges).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------
 // normalizeInfo
 // ---------------------------------------------------------------------------
 describe('normalizeInfo', () => {
-  test('maps all fields correctly', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo());
+  test('maps all fields and parses chapters from the description', () => {
+    const info = normalizeInfo(RICK, makeRawInfo());
     expect(info.id).toBe(RICK);
     expect(info.title).toBe('Rick Astley - Never Gonna Give You Up (Official Video)');
-    expect(info.description).toBe('The official video for "Never Gonna Give You Up".');
     expect(info.channel).toBe('Rick Astley');
     expect(info.duration).toBe('3:33'); // 213 seconds
     expect(info.url).toBe(WATCH_URL);
     expect(info.embedUrl).toBe(EMBED_URL);
+    expect(info.viewCount).toBe(1_600_000_000);
+    expect(info.published).toBe('Oct 25, 2009');
+    expect(info.verified).toBe(true);
+    expect(info.hasCaptions).toBe(true);
+    expect(info.captionLanguages).toEqual(['en', 'es']);
+    expect(info.chapters).toHaveLength(2);
+    expect(info.chapters[0]).toEqual({ title: 'Intro', start: '0:00', startMs: 0 });
   });
 
-  test('missing short_description defaults to empty string', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo({ short_description: undefined }));
+  test('empty description -> empty string and no chapters', () => {
+    const info = normalizeInfo(RICK, makeRawInfo({ description: '' }));
     expect(info.description).toBe('');
+    expect(info.chapters).toEqual([]);
   });
 
   test('null channel -> channel null', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo({ channel: null }));
-    expect(info.channel).toBeNull();
+    expect(normalizeInfo(RICK, makeRawInfo({ channel: null })).channel).toBeNull();
   });
 
-  test('missing channel -> channel null regardless of author', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo({ channel: null, author: 'Some Author' }));
-    expect(info.channel).toBeNull();
+  test('null duration -> null', () => {
+    expect(normalizeInfo(RICK, makeRawInfo({ durationSeconds: null })).duration).toBeNull();
   });
 
-  test('missing duration -> null', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo({ duration: undefined }));
-    expect(info.duration).toBeNull();
+  test('no caption languages -> hasCaptions false', () => {
+    const info = normalizeInfo(RICK, makeRawInfo({ captionLanguages: [] }));
+    expect(info.hasCaptions).toBe(false);
+    expect(info.captionLanguages).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSearchFilters
+// ---------------------------------------------------------------------------
+describe('buildSearchFilters', () => {
+  test('defaults to captioned-only (subtitles)', () => {
+    expect(buildSearchFilters()).toEqual({ features: ['subtitles'] });
+    expect(buildSearchFilters({ limit: 50 })).toEqual({ features: ['subtitles'] });
   });
 
-  test('channel.name is used as the channel field', () => {
-    const info = normalizeInfo(RICK, makeBasicInfo());
-    expect(info.channel).toBe('Rick Astley'); // from channel.name
+  test('features:all drops the subtitles filter', () => {
+    expect(buildSearchFilters({ features: 'all' }).features).toBeUndefined();
+  });
+
+  test('maps sort aliases', () => {
+    expect(buildSearchFilters({ sort: 'views' }).sort_by).toBe('view_count');
+    expect(buildSearchFilters({ sort: 'date' }).sort_by).toBe('upload_date');
+    expect(buildSearchFilters({ sort: 'relevance' }).sort_by).toBe('relevance');
+  });
+
+  test('passes uploadDate/duration through, omitting all/any', () => {
+    const f = buildSearchFilters({ uploadDate: 'year', duration: 'long', features: 'all' });
+    expect(f.upload_date).toBe('year');
+    expect(f.duration).toBe('long');
+    expect(buildSearchFilters({ uploadDate: 'all', duration: 'any' }).upload_date).toBeUndefined();
+    expect(buildSearchFilters({ duration: 'any' }).duration).toBeUndefined();
   });
 });
 

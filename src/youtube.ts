@@ -9,14 +9,28 @@
 import { Innertube } from 'youtubei.js';
 
 import { extractVideoId, toEmbedUrl, toWatchUrl } from './ids.ts';
+import { parseChapters, parseViewCount } from './parse.ts';
 import type { TranscriptResult, TranscriptSegment, VideoInfo, VideoSummary } from './types.ts';
+
+// ---------------------------------------------------------------------------
+// Search options
+// ---------------------------------------------------------------------------
+
+export type SearchOpts = {
+  limit?: number;
+  sort?: 'relevance' | 'date' | 'views' | 'rating';
+  uploadDate?: 'all' | 'hour' | 'today' | 'week' | 'month' | 'year';
+  duration?: 'any' | 'short' | 'medium' | 'long';
+  /** 'cc' (default) restricts to captioned videos; 'all' widens. */
+  features?: 'cc' | 'all';
+};
 
 // ---------------------------------------------------------------------------
 // Engine interface
 // ---------------------------------------------------------------------------
 
 export interface Engine {
-  search(query: string, opts?: { limit?: number }): Promise<VideoSummary[]>;
+  search(query: string, opts?: SearchOpts): Promise<VideoSummary[]>;
   getInfo(id: string): Promise<VideoInfo>;
   getTranscript(id: string, lang?: string): Promise<TranscriptResult>;
 }
@@ -34,14 +48,45 @@ export async function createEngine(): Promise<Engine> {
   return {
     async search(query, opts) {
       const limit = opts?.limit ?? 10;
-      const res = await yt.search(query);
-      return normalizeSearchResults(res.results, limit);
+      // biome-ignore lint/suspicious/noExplicitAny: youtubei.js filter typing is loose
+      let page: any = await yt.search(query, buildSearchFilters(opts) as any);
+      const nodes: unknown[] = [...(page.results ?? [])];
+      let guard = 0;
+      // Follow continuations until we have enough video nodes (page ceiling = 6).
+      while (countVideoNodes(nodes) < limit && guard < 6) {
+        try {
+          page = await page.getContinuation();
+        } catch {
+          break;
+        }
+        if (!page?.results?.length) break;
+        nodes.push(...page.results);
+        guard++;
+      }
+      return normalizeSearchResults(nodes, limit);
     },
 
     async getInfo(input) {
       const id = resolveId(input);
-      const info = await yt.getBasicInfo(id);
-      return normalizeInfo(id, info.basic_info);
+      // Full getInfo (not getBasicInfo) so we can surface captions + chapters.
+      // biome-ignore lint/suspicious/noExplicitAny: youtubei.js info typing is loose
+      const info: any = await yt.getInfo(id);
+      const bi = info.basic_info ?? {};
+      const description: string =
+        info.secondary_info?.description?.toString?.() ?? bi.short_description ?? '';
+      const captionLanguages: string[] = (info.captions?.caption_tracks ?? [])
+        .map((t: { language_code?: string }) => t.language_code)
+        .filter((c: unknown): c is string => typeof c === 'string');
+      return normalizeInfo(id, {
+        title: bi.title,
+        description,
+        channel: bi.channel?.name ?? bi.author ?? null,
+        durationSeconds: typeof bi.duration === 'number' ? bi.duration : null,
+        viewCount: typeof bi.view_count === 'number' ? bi.view_count : null,
+        published: info.primary_info?.published?.toString?.() ?? null,
+        verified: info.secondary_info?.owner?.author?.is_verified ?? false,
+        captionLanguages,
+      });
     },
 
     async getTranscript(input, lang) {
@@ -92,19 +137,35 @@ type RawVideoNode = {
   type: string;
   video_id: string;
   title: { toString(): string };
-  author: { name: string } | null | undefined;
-  duration: { text: string; seconds: number } | null | undefined;
+  author?: { name?: string; is_verified?: boolean } | null;
+  duration?: { text?: string } | null;
+  view_count?: unknown;
+  short_view_count?: unknown;
+  published?: unknown;
+  snippets?: Array<{ text?: unknown }> | null;
+  badges?: Array<{ label?: string }> | null;
 };
 
+/** Coerces a youtubei.js Text-ish value (or string) to a clean string, else null. */
+function asText(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === 'string') return v.trim() || null;
+  const s = (v as { toString?: () => string }).toString?.();
+  return s && s !== '[object Object]' ? s.trim() || null : null;
+}
+
 /**
- * Maps library search result nodes to VideoSummary[].
- * Skips non-Video nodes; respects limit.
+ * Maps library search result nodes to VideoSummary[], surfacing the cheap
+ * quality signals (views, recency, verified, snippet, badges). Skips non-Video
+ * nodes; respects limit.
  */
 export function normalizeSearchResults(raw: unknown[], limit: number): VideoSummary[] {
   const out: VideoSummary[] = [];
   for (const node of raw) {
     if (out.length >= limit) break;
     if (!isVideoNode(node)) continue;
+    const fullViews = asText(node.view_count);
+    const shortViews = asText(node.short_view_count);
     out.push({
       id: node.video_id,
       title: node.title.toString(),
@@ -112,6 +173,14 @@ export function normalizeSearchResults(raw: unknown[], limit: number): VideoSumm
       duration: node.duration?.text ?? null,
       url: toWatchUrl(node.video_id),
       embedUrl: toEmbedUrl(node.video_id),
+      viewCount: parseViewCount(fullViews ?? shortViews),
+      viewCountText: shortViews ?? fullViews,
+      published: asText(node.published),
+      verified: node.author?.is_verified ?? false,
+      descriptionSnippet: asText(node.snippets?.[0]?.text),
+      badges: (node.badges ?? [])
+        .map((b) => b.label)
+        .filter((l): l is string => typeof l === 'string'),
     });
   }
   return out;
@@ -126,30 +195,74 @@ function isVideoNode(node: unknown): node is RawVideoNode {
   );
 }
 
+function countVideoNodes(nodes: unknown[]): number {
+  return nodes.filter(isVideoNode).length;
+}
+
 /**
- * Shape subset of basic_info we actually read.
+ * Maps our SearchOpts to a youtubei.js search-filters object. Defaults to
+ * captioned-only (`features: ['subtitles']`) unless `features: 'all'`.
  */
-type RawBasicInfo = {
-  id?: string;
+export function buildSearchFilters(opts?: SearchOpts): {
+  sort_by?: string;
+  upload_date?: string;
+  duration?: string;
+  features?: string[];
+} {
+  const sortMap = {
+    relevance: 'relevance',
+    date: 'upload_date',
+    views: 'view_count',
+    rating: 'rating',
+  } as const;
+  const filters: {
+    sort_by?: string;
+    upload_date?: string;
+    duration?: string;
+    features?: string[];
+  } = {};
+  if (opts?.sort) filters.sort_by = sortMap[opts.sort];
+  if (opts?.uploadDate && opts.uploadDate !== 'all') filters.upload_date = opts.uploadDate;
+  if (opts?.duration && opts.duration !== 'any') filters.duration = opts.duration;
+  if (opts?.features !== 'all') filters.features = ['subtitles'];
+  return filters;
+}
+
+/**
+ * Structural subset of the fields the engine extracts from a full getInfo.
+ */
+type RawInfo = {
   title?: string;
-  short_description?: string;
-  author?: string;
-  duration?: number;
-  channel?: { id: string; name: string; url: string } | null;
+  description?: string;
+  channel?: string | null;
+  durationSeconds?: number | null;
+  viewCount?: number | null;
+  published?: string | null;
+  verified?: boolean;
+  captionLanguages?: string[];
 };
 
 /**
- * Maps basic_info to VideoInfo.
+ * Maps extracted info fields to VideoInfo, including chapters parsed from the
+ * description and caption availability.
  */
-export function normalizeInfo(id: string, basicInfo: RawBasicInfo): VideoInfo {
+export function normalizeInfo(id: string, raw: RawInfo): VideoInfo {
+  const captionLanguages = raw.captionLanguages ?? [];
+  const description = raw.description ?? '';
   return {
     id,
-    title: basicInfo.title ?? '',
-    description: basicInfo.short_description ?? '',
-    channel: basicInfo.channel?.name ?? null,
-    duration: basicInfo.duration != null ? formatDuration(basicInfo.duration) : null,
+    title: raw.title ?? '',
+    description,
+    channel: raw.channel ?? null,
+    duration: raw.durationSeconds != null ? formatDuration(raw.durationSeconds) : null,
     url: toWatchUrl(id),
     embedUrl: toEmbedUrl(id),
+    viewCount: raw.viewCount ?? null,
+    published: raw.published ?? null,
+    verified: raw.verified ?? false,
+    hasCaptions: captionLanguages.length > 0,
+    captionLanguages,
+    chapters: parseChapters(description),
   };
 }
 

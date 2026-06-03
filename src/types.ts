@@ -5,6 +5,19 @@ export type VideoSummary = {
   duration: string | null;
   url: string;
   embedUrl: string;
+  // Cheap quality/relevance signals surfaced from the search response (v1.2).
+  viewCount: number | null;
+  viewCountText: string | null;
+  published: string | null;
+  verified: boolean;
+  descriptionSnippet: string | null;
+  badges: string[];
+};
+
+export type Chapter = {
+  title: string;
+  start: string; // human timestamp, e.g. "12:42"
+  startMs: number;
 };
 
 export type VideoInfo = {
@@ -15,6 +28,13 @@ export type VideoInfo = {
   duration: string | null;
   url: string;
   embedUrl: string;
+  // Enriched detail signals (v1.2).
+  viewCount: number | null;
+  published: string | null;
+  verified: boolean;
+  hasCaptions: boolean;
+  captionLanguages: string[];
+  chapters: Chapter[];
 };
 
 export type TranscriptSegment = {
@@ -30,6 +50,7 @@ export type TranscriptResult = {
   transcript: string | null;
   segments?: TranscriptSegment[];
   reason?: string;
+  truncated?: boolean;
 };
 
 export type ContextResult = VideoInfo & { transcript: TranscriptResult };
