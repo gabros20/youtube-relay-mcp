@@ -25,10 +25,21 @@ describe('runSearch', () => {
     }
   });
 
-  test('forwards limit to engine', async () => {
+  test('forwards limit and filters to engine', async () => {
     const { engine, calls } = makeFakeEngine({ searchResult: [] });
-    await runSearch(engine, { query: 'test', limit: 3 });
-    expect(calls.search[0]?.limit).toBe(3);
+    await runSearch(engine, {
+      query: 'test',
+      limit: 3,
+      sort: 'views',
+      features: 'all',
+      uploadDate: 'year',
+    });
+    expect(calls.search[0]?.opts).toEqual({
+      limit: 3,
+      sort: 'views',
+      features: 'all',
+      uploadDate: 'year',
+    });
   });
 
   test('empty query returns INVALID_INPUT without calling engine', async () => {

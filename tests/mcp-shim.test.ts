@@ -33,7 +33,7 @@ describe('runTool', () => {
   test('search: forwards limit to engine', async () => {
     const { engine, calls } = makeFakeEngine({ searchResult: [] });
     await runTool(engine, 'search', { query: 'bun', limit: 7 });
-    expect(calls.search[0]?.limit).toBe(7);
+    expect(calls.search[0]?.opts?.limit).toBe(7);
   });
 
   // ── info ──────────────────────────────────────────────────────────────────

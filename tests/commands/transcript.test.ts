@@ -43,6 +43,48 @@ describe('runTranscript', () => {
     }
   });
 
+  test('--head windows the transcript to the opening segments', async () => {
+    const multi: TranscriptResult = {
+      id: 'dQw4w9WgXcQ',
+      lang: 'en',
+      source: 'innertube',
+      transcript: 'a\nb\nc',
+      segments: [
+        { text: 'a', startMs: 0, durationMs: 1000 },
+        { text: 'b', startMs: 5000, durationMs: 1000 },
+        { text: 'c', startMs: 60000, durationMs: 1000 },
+      ],
+    };
+    const { engine } = makeFakeEngine({ transcriptResult: multi });
+    const result = await runTranscript(engine, { target: 'dQw4w9WgXcQ', head: 10 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.transcript).toBe('a\nb');
+      expect(result.data.truncated).toBe(true);
+    }
+  });
+
+  test('--max-chars caps the transcript', async () => {
+    const multi: TranscriptResult = {
+      id: 'dQw4w9WgXcQ',
+      lang: 'en',
+      source: 'innertube',
+      transcript: 'aaaa\nbbbb\ncccc',
+      segments: [
+        { text: 'aaaa', startMs: 0, durationMs: 1 },
+        { text: 'bbbb', startMs: 10, durationMs: 1 },
+        { text: 'cccc', startMs: 20, durationMs: 1 },
+      ],
+    };
+    const { engine } = makeFakeEngine({ transcriptResult: multi });
+    const result = await runTranscript(engine, { target: 'dQw4w9WgXcQ', maxChars: 9 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.transcript).toBe('aaaa\nbbbb');
+      expect(result.data.truncated).toBe(true);
+    }
+  });
+
   test('captionless result (transcript:null + reason) returns ok — not error', async () => {
     const { engine } = makeFakeEngine({ transcriptResult: CAPTIONLESS });
     const result = await runTranscript(engine, { target: 'dQw4w9WgXcQ' });

@@ -1,11 +1,11 @@
 import { err, ok } from '../output.ts';
 import type { Envelope, VideoSummary } from '../types.ts';
-import type { Engine } from '../youtube.ts';
+import type { Engine, SearchOpts } from '../youtube.ts';
 import { PROXY_HINT, errorMessage } from './_shared.ts';
 
 export async function runSearch(
   engine: Engine,
-  opts: { query: string; limit?: number },
+  opts: { query: string } & SearchOpts,
 ): Promise<Envelope<VideoSummary[]>> {
   const query = opts.query.trim();
   if (!query) {
@@ -13,7 +13,8 @@ export async function runSearch(
   }
 
   try {
-    const results = await engine.search(query, { limit: opts.limit });
+    const { query: _q, ...filters } = opts;
+    const results = await engine.search(query, filters);
     return ok('search', results);
   } catch (e) {
     return err('search', 'FETCH_FAILED', errorMessage(e), PROXY_HINT);

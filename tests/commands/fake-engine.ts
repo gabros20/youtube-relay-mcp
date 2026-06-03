@@ -1,5 +1,5 @@
 import type { TranscriptResult, VideoInfo, VideoSummary } from '../../src/types.ts';
-import type { Engine } from '../../src/youtube.ts';
+import type { Engine, SearchOpts } from '../../src/youtube.ts';
 
 export type FakeEngineConfig = {
   searchResult?: VideoSummary[];
@@ -11,7 +11,7 @@ export type FakeEngineConfig = {
 };
 
 export type FakeEngineCalls = {
-  search: { query: string; limit?: number }[];
+  search: { query: string; opts?: SearchOpts }[];
   getInfo: string[];
   getTranscript: { id: string; lang?: string }[];
 };
@@ -24,7 +24,7 @@ export function makeFakeEngine(cfg: FakeEngineConfig = {}): {
 
   const engine: Engine = {
     async search(query, opts) {
-      calls.search.push({ query, limit: opts?.limit });
+      calls.search.push({ query, opts });
       if (cfg.searchThrows) throw cfg.searchThrows;
       return cfg.searchResult ?? [];
     },
@@ -52,6 +52,12 @@ export function stubInfo(id: string): VideoInfo {
     duration: '1:23',
     url: `https://www.youtube.com/watch?v=${id}`,
     embedUrl: `https://www.youtube.com/embed/${id}`,
+    viewCount: 1000,
+    published: '1 year ago',
+    verified: true,
+    hasCaptions: true,
+    captionLanguages: ['en'],
+    chapters: [],
   };
 }
 
