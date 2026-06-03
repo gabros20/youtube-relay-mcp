@@ -23,7 +23,7 @@ function timestampToMs(ts: string): number {
   return ((h ?? 0) * 3600 + (m ?? 0) * 60 + (s ?? 0)) * 1000;
 }
 
-const CHAPTER_LINE = /^\s*((?:\d{1,2}:)?\d{1,2}:\d{2})\s+(\S.*)$/;
+const CHAPTER_LINE = /^\s*((?:\d{1,2}:)?\d{1,3}:\d{2})\s+(\S.*)$/;
 
 /**
  * Parses chapters from a video description: lines that begin with a timestamp

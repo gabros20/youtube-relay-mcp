@@ -32,6 +32,10 @@ describe('parseChapters', () => {
   test('handles h:mm:ss timestamps', () => {
     expect(parseChapters('1:02:03 Long section')[0]!.startMs).toBe(3_723_000);
   });
+
+  test('handles 3-digit minutes (mm:ss past 99 minutes)', () => {
+    expect(parseChapters('100:00 Way in')[0]!.startMs).toBe(6_000_000);
+  });
   test('ignores timestamps that are not at the start of a line', () => {
     expect(parseChapters('see 1:30 for details')).toHaveLength(0);
   });

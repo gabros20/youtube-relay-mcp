@@ -41,6 +41,19 @@ export function applyMaxChars(result: TranscriptResult, maxChars: number): Trans
     len += add;
   }
   if (kept.length === result.segments.length) return result;
+
+  // Budget smaller than the first segment: slice it rather than returning ''.
+  if (kept.length === 0) {
+    const first = result.segments[0];
+    const text = first ? first.text.slice(0, maxChars) : '';
+    return {
+      ...result,
+      transcript: text,
+      segments: first ? [{ ...first, text }] : [],
+      truncated: true,
+    };
+  }
+
   return {
     ...result,
     transcript: kept.map((s) => s.text).join('\n'),

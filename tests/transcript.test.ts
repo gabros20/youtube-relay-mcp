@@ -44,6 +44,13 @@ describe('applyMaxChars', () => {
     expect(r.transcript).toBe('aaaa\nbbbb\ncccc');
     expect(r.truncated).toBeUndefined();
   });
+  test('budget smaller than first segment slices it (never returns empty string)', () => {
+    const r = applyMaxChars(base, 2); // first segment 'aaaa' (4) exceeds budget
+    expect(r.transcript).toBe('aa');
+    expect(r.truncated).toBe(true);
+    expect(r.transcript).not.toBe('');
+  });
+
   test('slices a segmentless transcript string', () => {
     const noSegs: TranscriptResult = {
       id: 'x',
