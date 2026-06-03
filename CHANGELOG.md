@@ -1,3 +1,13 @@
+# [1.3.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.2.0...v1.3.0) (2026-06-03)
+
+
+### Features
+
+* frame pure helpers + FrameExtractor interface (TDD) ([5e9a6f7](https://github.com/gabros20/youtube-relay-mcp/commit/5e9a6f71a5593a580df0d7e0bf9ee7fe3df55574)), closes [hi#res](https://github.com/hi/issues/res)
+* real FrameExtractor (yt-dlp + ffmpeg/ffprobe) + create outDir + smoke ([2cd905e](https://github.com/gabros20/youtube-relay-mcp/commit/2cd905e959579e36be0ef0c65aa47be3034a9c1f))
+* runFrame command (DI, deps-check, batch, per-frame error isolation) ([4e55ae5](https://github.com/gabros20/youtube-relay-mcp/commit/4e55ae520e09ba7490f32c4a49c26f209e049bee))
+* wire frame command into CLI + MCP + registry + docs ([63a5012](https://github.com/gabros20/youtube-relay-mcp/commit/63a50121893b48c702fa322ed02b9c73313df2f9))
+
 # [1.2.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.1.0...v1.2.0) (2026-06-03)
 
 
