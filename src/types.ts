@@ -55,6 +55,10 @@ export type TranscriptResult = {
 
 export type ContextResult = VideoInfo & { transcript: TranscriptResult };
 
+export type Frame = { at: number; path: string; width: number; height: number };
+export type FrameError = { at: number; error: string };
+export type FrameResult = { id: string; frames: Array<Frame | FrameError> };
+
 export type Ok<T> = { ok: true; command: string; data: T };
 export type Err = {
   ok: false;
