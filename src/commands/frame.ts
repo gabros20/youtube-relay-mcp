@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FrameExtractor, ImageFormat, Resolution } from '../frame.ts';
 import { frameOutputName } from '../frame.ts';
@@ -36,9 +37,12 @@ export async function runFrame(
     return err('frame', 'FETCH_FAILED', errorMessage(e));
   }
 
+  const outDir = opts.outDir ?? '.';
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+
   const frames: Array<Frame | FrameError> = [];
   for (const at of opts.ats) {
-    const path = join(opts.outDir ?? '.', frameOutputName(id, at, format));
+    const path = join(outDir, frameOutputName(id, at, format));
     try {
       const dims = await extractor.grabFrame(url, at, path, format);
       frames.push({ at, path, width: dims.width, height: dims.height });

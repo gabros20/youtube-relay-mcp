@@ -2,6 +2,7 @@
  * High-res frame extraction. This module is the ONLY one that shells out to
  * external binaries (yt-dlp + ffmpeg/ffprobe); the rest of the tool is pure-TS.
  */
+import { spawn } from 'node:child_process';
 
 /**
  * Parses a time expression to seconds. Accepts plain seconds ("90", "7.5"),
@@ -70,4 +71,71 @@ export interface FrameExtractor {
     outPath: string,
     format: ImageFormat,
   ): Promise<{ width: number; height: number }>;
+}
+
+/** Spawns a binary and resolves its exit code + captured output (never rejects). */
+function exec(
+  cmd: string,
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    const proc = spawn(cmd, args);
+    proc.stdout.on('data', (d) => {
+      stdout += d;
+    });
+    proc.stderr.on('data', (d) => {
+      stderr += d;
+    });
+    proc.on('error', () => resolve({ code: 127, stdout, stderr: 'spawn error (binary missing?)' }));
+    proc.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
+}
+
+/** The real extractor backed by yt-dlp (URL resolution) + ffmpeg/ffprobe (frame + dims). */
+export function createFrameExtractor(): FrameExtractor {
+  return {
+    async depsAvailable() {
+      const [ff, yd] = await Promise.all([
+        exec('ffmpeg', ['-version']),
+        exec('yt-dlp', ['--version']),
+      ]);
+      return { ffmpeg: ff.code === 0, ytdlp: yd.code === 0 };
+    },
+
+    async resolveStreamUrl(id, res) {
+      const watch = `https://www.youtube.com/watch?v=${id}`;
+      const r = await exec('yt-dlp', ['-f', ytdlpFormat(res), '-g', watch]);
+      const url = r.stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)[0];
+      if (r.code !== 0 || !url) {
+        throw new Error(`yt-dlp could not resolve a stream URL (exit ${r.code})`);
+      }
+      return url;
+    },
+
+    async grabFrame(url, seconds, outPath, format) {
+      const r = await exec('ffmpeg', ffmpegArgs(url, seconds, outPath, format));
+      if (r.code !== 0) throw new Error(`ffmpeg failed (exit ${r.code})`);
+      const probe = await exec('ffprobe', [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=width,height',
+        '-of',
+        'csv=p=0',
+        outPath,
+      ]);
+      const [w, h] = probe.stdout
+        .trim()
+        .split(',')
+        .map((n) => Number.parseInt(n, 10));
+      return { width: w || 0, height: h || 0 };
+    },
+  };
 }
