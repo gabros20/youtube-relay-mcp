@@ -54,16 +54,56 @@ describe('parseArgs', () => {
     expect(result).toEqual({
       kind: 'command',
       command: 'info',
-      opts: { target: 'https://youtu.be/abc' },
+      opts: { targets: ['https://youtu.be/abc'] },
     });
   });
 
-  test('transcript with --lang and --format', () => {
-    const result = parseArgs(['transcript', 'ID', '--lang', 'en', '--format', 'text']);
+  test('info with multiple targets (batch)', () => {
+    const result = parseArgs(['info', 'a', 'b', 'c']);
+    expect(result).toEqual({
+      kind: 'command',
+      command: 'info',
+      opts: { targets: ['a', 'b', 'c'] },
+    });
+  });
+
+  test('transcript with --lang, --format, --head, --max-chars', () => {
+    const result = parseArgs([
+      'transcript',
+      'ID',
+      '--lang',
+      'en',
+      '--format',
+      'text',
+      '--head',
+      '120',
+      '--max-chars',
+      '1500',
+    ]);
     expect(result).toEqual({
       kind: 'command',
       command: 'transcript',
-      opts: { target: 'ID', lang: 'en', format: 'text' },
+      opts: { targets: ['ID'], lang: 'en', format: 'text', head: 120, maxChars: 1500 },
+    });
+  });
+
+  test('search with filters', () => {
+    const result = parseArgs([
+      'search',
+      'ai',
+      '--sort',
+      'views',
+      '--features',
+      'all',
+      '--upload-date',
+      'year',
+      '--duration',
+      'long',
+    ]);
+    expect(result).toEqual({
+      kind: 'command',
+      command: 'search',
+      opts: { query: 'ai', sort: 'views', features: 'all', uploadDate: 'year', duration: 'long' },
     });
   });
 
@@ -72,7 +112,7 @@ describe('parseArgs', () => {
     expect(result).toEqual({
       kind: 'command',
       command: 'context',
-      opts: { target: 'dQw4w9WgXcQ', lang: 'en' },
+      opts: { targets: ['dQw4w9WgXcQ'], lang: 'en' },
     });
   });
 
@@ -90,26 +130,28 @@ describe('parseArgs', () => {
     expect(result).toEqual({
       kind: 'command',
       command: 'transcript',
-      opts: { target: 'abc123', lang: undefined, format: undefined },
+      opts: {
+        targets: ['abc123'],
+        lang: undefined,
+        format: undefined,
+        head: undefined,
+        maxChars: undefined,
+      },
     });
   });
 
   test('transcript --lang with no value → lang undefined, not empty string', () => {
     const result = parseArgs(['transcript', 'ID', '--lang']);
-    expect(result).toEqual({
-      kind: 'command',
-      command: 'transcript',
-      opts: { target: 'ID', lang: undefined, format: undefined },
-    });
+    expect(result.kind === 'command' && result.command === 'transcript' && result.opts.lang).toBe(
+      undefined,
+    );
   });
 
   test('context --lang with no value → lang undefined, not empty string', () => {
     const result = parseArgs(['context', 'ID', '--lang']);
-    expect(result).toEqual({
-      kind: 'command',
-      command: 'context',
-      opts: { target: 'ID', lang: undefined },
-    });
+    expect(result.kind === 'command' && result.command === 'context' && result.opts.lang).toBe(
+      undefined,
+    );
   });
 });
 
@@ -229,5 +271,68 @@ describe('run', () => {
     const { engine, calls } = makeFakeEngine();
     await run(['transcript', 'dQw4w9WgXcQ', '--lang'], engine);
     expect(calls.getTranscript[0]?.lang).toBeUndefined();
+  });
+
+  test('search forwards filters to the engine', async () => {
+    const { engine, calls } = makeFakeEngine({ searchResult: [] });
+    await run(['search', 'ai', '--sort', 'views', '--features', 'all'], engine);
+    expect(calls.search[0]?.opts?.sort).toBe('views');
+    expect(calls.search[0]?.opts?.features).toBe('all');
+  });
+
+  test('batch info (multiple ids) → JSON array of envelopes, all called', async () => {
+    const { engine, calls } = makeFakeEngine();
+    const { stdout, exitCode } = await run(['info', 'dQw4w9WgXcQ', 'jNQXAC9IVRw'], engine);
+    expect(exitCode).toBe(0);
+    const arr = JSON.parse(stdout);
+    expect(Array.isArray(arr)).toBe(true);
+    expect(arr).toHaveLength(2);
+    expect(calls.getInfo).toEqual(['dQw4w9WgXcQ', 'jNQXAC9IVRw']);
+  });
+
+  test('batch exit code is 1 when any item fails', async () => {
+    // First id valid, second invalid → runInfo returns INVALID_INPUT for it.
+    const { engine } = makeFakeEngine();
+    const { exitCode } = await run(['info', 'dQw4w9WgXcQ', 'not-a-valid-id'], engine);
+    expect(exitCode).toBe(1);
+  });
+
+  test('single id still returns a single envelope (not an array)', async () => {
+    const { engine } = makeFakeEngine();
+    const { stdout } = await run(['info', 'dQw4w9WgXcQ'], engine);
+    expect(Array.isArray(JSON.parse(stdout))).toBe(false);
+  });
+
+  test('`-` target reads whitespace-separated ids from stdin', async () => {
+    const { engine, calls } = makeFakeEngine();
+    const { exitCode } = await run(['info', '-'], engine, 'dQw4w9WgXcQ jNQXAC9IVRw\n');
+    expect(exitCode).toBe(0);
+    expect(calls.getInfo).toEqual(['dQw4w9WgXcQ', 'jNQXAC9IVRw']);
+  });
+
+  test('--head 0 → INVALID_INPUT, engine not called', async () => {
+    const { engine, calls } = makeFakeEngine();
+    const { exitCode, stdout } = await run(['transcript', 'dQw4w9WgXcQ', '--head', '0'], engine);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout).error.code).toBe('INVALID_INPUT');
+    expect(calls.getTranscript).toHaveLength(0);
+  });
+
+  test('--max-chars caps the transcript text', async () => {
+    const { engine } = makeFakeEngine({
+      transcriptResult: {
+        id: 'dQw4w9WgXcQ',
+        lang: 'en',
+        source: 'innertube',
+        transcript: 'aaaa\nbbbb\ncccc',
+        segments: [
+          { text: 'aaaa', startMs: 0, durationMs: 1 },
+          { text: 'bbbb', startMs: 10, durationMs: 1 },
+          { text: 'cccc', startMs: 20, durationMs: 1 },
+        ],
+      },
+    });
+    const { stdout } = await run(['transcript', 'dQw4w9WgXcQ', '--max-chars', '9'], engine);
+    expect(JSON.parse(stdout).data.transcript).toBe('aaaa\nbbbb');
   });
 });
