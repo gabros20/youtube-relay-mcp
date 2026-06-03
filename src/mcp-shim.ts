@@ -10,7 +10,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { runContext, runInfo, runSearch, runTranscript } from './commands/index.ts';
 import { err, toJson } from './output.ts';
-import type { Engine } from './youtube.ts';
+import type { Engine, SearchOpts } from './youtube.ts';
 import { createEngine } from './youtube.ts';
 
 // ── Lazy shared engine ──────────────────────────────────────────────────────
@@ -45,9 +45,15 @@ export async function runTool(
 
   if (name === 'search') {
     const query = String(args.query ?? '');
-    const limitRaw = args.limit;
-    const limit = limitRaw !== undefined ? Number(limitRaw) : undefined;
-    const envelope = await runSearch(engine, { query, limit });
+    const limit = args.limit !== undefined ? Number(args.limit) : undefined;
+    const envelope = await runSearch(engine, {
+      query,
+      limit,
+      sort: args.sort as SearchOpts['sort'],
+      uploadDate: args.uploadDate as SearchOpts['uploadDate'],
+      duration: args.duration as SearchOpts['duration'],
+      features: args.features as SearchOpts['features'],
+    });
     return envelope.ok ? text(envelope) : errResult(envelope);
   }
 
@@ -63,7 +69,9 @@ export async function runTool(
     const formatRaw = args.format;
     const format =
       formatRaw === 'text' || formatRaw === 'json' ? (formatRaw as 'text' | 'json') : undefined;
-    const envelope = await runTranscript(engine, { target, lang, format });
+    const head = args.head !== undefined ? Number(args.head) : undefined;
+    const maxChars = args.maxChars !== undefined ? Number(args.maxChars) : undefined;
+    const envelope = await runTranscript(engine, { target, lang, format, head, maxChars });
     return envelope.ok ? text(envelope) : errResult(envelope);
   }
 
@@ -91,10 +99,15 @@ function buildServer(): McpServer {
   server.registerTool(
     'search',
     {
-      description: 'Search YouTube and return a list of video summaries.',
+      description:
+        'Search YouTube (captioned-only by default) and return enriched video summaries (views, recency, verified, snippet).',
       inputSchema: {
         query: z.string().describe('search query'),
         limit: z.number().int().positive().optional(),
+        sort: z.enum(['relevance', 'date', 'views', 'rating']).optional(),
+        uploadDate: z.enum(['all', 'hour', 'today', 'week', 'month', 'year']).optional(),
+        duration: z.enum(['any', 'short', 'medium', 'long']).optional(),
+        features: z.enum(['cc', 'all']).describe("'cc' (default) = captioned only").optional(),
       },
     },
     async (args: unknown) => runTool(await getEngine(), 'search', args as Record<string, unknown>),
@@ -103,7 +116,8 @@ function buildServer(): McpServer {
   server.registerTool(
     'info',
     {
-      description: 'Fetch title, description, channel, and duration for a single video.',
+      description:
+        'Fetch rich detail for a video: title, full description, channel, duration, views, chapters, and caption availability.',
       inputSchema: {
         target: z.string().describe('YouTube video id or URL'),
       },
@@ -120,6 +134,8 @@ function buildServer(): McpServer {
         target: z.string().describe('YouTube video id or URL'),
         lang: z.string().optional(),
         format: z.enum(['text', 'json']).optional(),
+        head: z.number().positive().describe('peek: keep only the first N seconds').optional(),
+        maxChars: z.number().int().positive().describe('peek: cap transcript length').optional(),
       },
     },
     async (args: unknown) =>

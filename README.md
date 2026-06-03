@@ -1,14 +1,16 @@
 # youtube-relay-mcp
 
-A code-execution-based YouTube tool for AI agents — a TypeScript **CLI**
-(`ytrelay`), a thin **MCP shim** (`youtube-relay-mcp`), and a **Claude Code
-skill**. Search YouTube, fetch a video's transcript + title + description, and
-get a clean, embeddable video ID/URL. One engine: [`youtubei.js`](https://github.com/LuanRT/YouTube.js).
+A **deep-research tool for YouTube** for AI agents — a TypeScript **CLI**
+(`ytrelay`), an **MCP server** (`youtube-relay-mcp`), and a **Claude Code skill**.
+Cast a wide net, rank candidates cheaply on metadata, peek before committing, and
+read full transcripts only for the finalists. One engine:
+[`youtubei.js`](https://github.com/LuanRT/YouTube.js).
 
-> **Status:** `search`, `info`, `transcript`, and `context` all work — clean JSON,
-> embeddable IDs, and full transcripts (manual + auto-generated captions, any
-> language). Transcripts are fetched via the signed `timedtext` caption URL from
-> the player response, so no PO token / external binary is required.
+> **Status:** all four commands work — enriched, captioned-only-by-default search
+> (views, recency, verified, snippet); rich `info` (full description, chapters,
+> caption availability); transcripts via the signed `timedtext` caption URL (no
+> PO token / external binary); a peek tier (`--head`/`--max-chars`); and batch +
+> stdin ergonomics. The bundled `SKILL.md` teaches the recommended funnel.
 
 ## Install
 
@@ -21,14 +23,17 @@ npm i -g youtube-relay-mcp
 Every command prints a JSON envelope to stdout.
 
 ```bash
-ytrelay search "agentic engineering" --limit 10
-ytrelay info <id|url>
-ytrelay transcript <id|url> --lang en
-ytrelay context <id|url>          # metadata + transcript + embed in one shot
+ytrelay search "agentic engineering" --limit 30 --sort views   # cheap, enriched, captioned-only
+ytrelay info <id|url> [<id> ...]      # full description + chapters + caption info (batch ok)
+ytrelay transcript <id|url> --head 120   # PEEK: first 2 min; or --max-chars N
+ytrelay context <id|url>              # metadata + full transcript + embed in one shot
 ```
 
-`context` is the primary command: one call returns everything an agent needs to
-both identify a video and embed it (`https://www.youtube.com/embed/<id>`).
+**The funnel** (see [`SKILL.md`](./.claude/skills/youtube-relay/SKILL.md)): rank
+on cheap search metadata → enrich the shortlist with `info` → peek finalists with
+`transcript --head` → full read only the survivors. `--features all` widens search
+beyond captioned videos. Every result carries `embedUrl`
+(`https://www.youtube.com/embed/<id>`).
 
 ## Why a CLI + skill (not a standalone MCP server)
 

@@ -1,181 +1,120 @@
 # youtube-relay-mcp
 
-A code-execution YouTube tool for AI agents. Wraps `youtubei.js` to **search YouTube**, **fetch video metadata** (title, description, channel, duration), and return an **embeddable video ID/URL**. Usable as a CLI (`ytrelay`), an MCP server, or a Claude Code skill.
+A **deep-research tool for YouTube** for AI agents — a CLI (`ytrelay`), an MCP
+server, and this skill. Cast a wide net, rank candidates cheaply on metadata,
+peek before committing, and read full transcripts only for the finalists.
 
-## When to use
+The tool is **atomic** (search / info / transcript / context). YOU compose the
+strategy. This skill gives you the **recommended workflow** first, then a full
+**reference** for each command with its cost so you can deviate intelligently.
 
-Use this when you need to find YouTube videos, pull a video's title/description, or get a clean embeddable video ID/URL to render or cite a video.
+---
 
-## Status / what works today
+## Recommended workflow (the funnel)
 
-- ✅ **search** — works.
-- ✅ **info** — title, description, channel, duration, embeddable id — works.
-- ✅ **context** — returns the full metadata + embed for a video (the transcript portion is currently degraded, see below) — works.
-- ✅ **transcript** — works (manual and auto-generated captions, any language). Returns the full text plus timestamped segments. Fetched via the signed `timedtext` caption URL from the player response (NOT the gated `get_transcript` endpoint), so no PO token is needed.
+Use this for "find the best YouTube material on <topic>" research tasks.
+
+**Golden rule — protect your context window:** transcripts are large. NEVER read
+full transcripts during exploration. Rank on cheap metadata first; peek before a
+full read; read in full only the handful that survive.
+
+```
+GATE 1 — cast a wide net (CHEAP: search)
+  Run several query variants (synonyms / intent angles), dedupe by `id`.
+    ytrelay search "prompt engineering" --limit 30 --sort views
+    ytrelay search "how to write prompts for llms" --limit 30
+  Each result already carries: title, channel, verified, viewCount, published,
+  durationSeconds-as-text, descriptionSnippet, badges. Rank on THESE alone.
+  Signals: authority (verified / known channel), validation (viewCount),
+  recency (published — matters for fast topics), specificity (title/snippet),
+  depth proxy (duration). Keep the ~10–15 most promising. NO transcript yet.
+
+GATE 2 — enrich the shortlist (1 CALL each: info)
+  ytrelay info <id1> <id2> ...        # batch — one call, array out
+  Now you have full description, chapters (structure = quality signal),
+  hasCaptions, viewCount. Re-rank. Drop to ~5–8. STILL no transcript.
+
+GATE 3 — peek the finalists (CHEAP: transcript --head / --max-chars)
+  ytrelay transcript <id> --head 120          # first 2 minutes
+  ytrelay transcript <id> --max-chars 1500     # ~first 1500 chars
+  Confirm the video actually delivers on its title before a full read.
+
+GATE 4 — full read (EXPENSIVE: transcript / context — only the few that survive)
+  ytrelay context <id>     # metadata + full transcript in one shot
+```
+
+Search is **captioned-only by default** (so everything you shortlist is
+readable). Add `--features all` only when you want metadata-only breadth.
+
+---
+
+## Commands (atomic reference)
+
+All commands print a JSON envelope to stdout — `{ ok, command, data }` on
+success, `{ ok:false, command, error:{code,message,hint} }` on failure.
+`youtubei.js` parser warnings go to **stderr** only; stdout is always clean
+JSON. Exit codes: 0 ok, 1 command error, 2 unknown command.
+
+### `search` — COST: cheap, broad. The net.
+```
+ytrelay search "<query>" [--limit N] [--features cc|all]
+        [--sort relevance|date|views|rating] [--upload-date all|hour|today|week|month|year]
+        [--duration any|short|medium|long]
+```
+- Captioned-only by default; `--features all` widens.
+- `--limit N` follows pagination to return up to N (page ceiling ≈ 100).
+- Returns `{id, title, channel, duration, url, embedUrl, viewCount, viewCountText,
+  published, verified, descriptionSnippet, badges}` per result.
+
+### `info` — COST: 1 call, rich. Re-rank the shortlist.
+```
+ytrelay info <id|url> [<id|url> ...]
+```
+- Returns `{id, title, description (full), channel, duration, url, embedUrl,
+  viewCount, published, verified, hasCaptions, captionLanguages, chapters[]}`.
+- `chapters` = `[{title, start, startMs}]` parsed from the description (a video
+  with real chapters is usually structured, higher-quality material).
+- Multiple ids → a JSON **array** of envelopes.
+
+### `transcript` — COST: expensive (full text). Peek first.
+```
+ytrelay transcript <id|url> [<id|url> ...] [--lang xx] [--format text|json]
+        [--head SECONDS] [--max-chars N]
+```
+- `--head S` keeps only the opening S seconds; `--max-chars N` caps length.
+  Either sets `truncated: true`. Use these to PEEK before a full read.
+- `--format json` (default) includes timestamped `segments`; `text` is the
+  string only.
+- No captions → `ok:true` with `transcript: null` and a `reason` (not an error).
+
+### `context` — COST: expensive. Full read in one shot.
+```
+ytrelay context <id|url> [<id|url> ...] [--lang xx]
+```
+- Returns enriched `info` fields **plus** `transcript`. Metadata + embed are
+  always returned even if the transcript is unavailable (`transcript.reason`).
+
+---
+
+## Composition notes
+
+- **Dedupe by `id`** across multiple `search` calls — that's your job, not the
+  tool's.
+- **Batch**: `info`/`transcript`/`context` take many ids in one call → array out
+  (single id stays a single envelope). Or pipe ids: `... | ytrelay info -`
+  (a literal `-` target reads whitespace-separated ids from stdin).
+- **Embedding**: every result has `embedUrl` = `https://www.youtube.com/embed/<id>`;
+  drop it straight into an `<iframe>`. `id` and watch `url` are always present.
+
+## Error codes
+
+- `INVALID_INPUT` — empty query / not a valid id-or-URL / bad flag. No network call.
+- `FETCH_FAILED` — request to YouTube failed (video unavailable/private, or a
+  datacenter-IP block — run from a residential network).
+- `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — unrecognized name.
 
 ## Install
 
 ```
 npm i -g youtube-relay-mcp
 ```
-
-After installation the `ytrelay` binary is available globally. Requests work best from a normal (residential) network; datacenter/cloud IPs are more likely to be blocked by YouTube.
-
-## Commands
-
-All commands print a JSON envelope to stdout (`{ ok, command, data }` on success, `{ ok:false, command, error }` on failure). Library/parser warnings from `youtubei.js` go to **stderr** only — stdout is always clean JSON. Exit code: 0 on success, 1 on a command error, 2 on an unknown command.
-
----
-
-### search
-
-```
-ytrelay search "<query>" [--limit N]
-```
-
-- `--limit N` — maximum number of results (default 5).
-
-```
-ytrelay search "bun runtime intro" --limit 3
-```
-
-```json
-{
-  "ok": true,
-  "command": "search",
-  "data": [
-    {
-      "id": "dQw4w9WgXcQ",
-      "title": "Never Gonna Give You Up",
-      "channel": "Rick Astley",
-      "duration": "3:33",
-      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "embedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ"
-    }
-  ]
-}
-```
-
-`channel` and `duration` may be `null` for some result types.
-
----
-
-### info
-
-```
-ytrelay info <id|url>
-```
-
-Accepts a bare 11-char id or any YouTube URL form (`watch?v=`, `youtu.be/`, `/embed/`, `/shorts/`).
-
-```
-ytrelay info https://youtu.be/dQw4w9WgXcQ
-```
-
-```json
-{
-  "ok": true,
-  "command": "info",
-  "data": {
-    "id": "dQw4w9WgXcQ",
-    "title": "Never Gonna Give You Up",
-    "description": "The official video for ...",
-    "channel": "Rick Astley",
-    "duration": "3:33",
-    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "embedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ"
-  }
-}
-```
-
----
-
-### context — the primary command
-
-Fetch metadata + transcript together in one call. Even when the transcript is unavailable (current limitation), this still returns full metadata and the embed URL — the transcript object carries a `reason`.
-
-```
-ytrelay context <id|url> [--lang xx]
-```
-
-- `--lang xx` — preferred caption language (BCP-47), when transcripts are available.
-
-```json
-{
-  "ok": true,
-  "command": "context",
-  "data": {
-    "id": "dQw4w9WgXcQ",
-    "title": "Never Gonna Give You Up",
-    "description": "...",
-    "channel": "Rick Astley",
-    "duration": "3:33",
-    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "embedUrl": "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    "transcript": {
-      "id": "dQw4w9WgXcQ",
-      "lang": "en",
-      "source": "innertube",
-      "transcript": "We're no strangers to love ..."
-    }
-  }
-}
-```
-
-If a video has no captions, `transcript.transcript` is `null` with a `reason` — `context` still returns full metadata + embed.
-
----
-
-### transcript
-
-```
-ytrelay transcript <id|url> [--lang xx] [--format text|json]
-```
-
-- `--lang xx` — preferred caption language (BCP-47); falls back to a manual track, else the first available.
-- `--format text|json` — `json` (default) includes a `segments` array (`{ text, startMs, durationMs }`); `text` returns the transcript string only (omits `segments`).
-
-```json
-{
-  "ok": true,
-  "command": "transcript",
-  "data": {
-    "id": "dQw4w9WgXcQ",
-    "lang": "en",
-    "source": "innertube",
-    "transcript": "Never gonna give you up ...",
-    "segments": [{ "text": "Never gonna give you up", "startMs": 18400, "durationMs": 2000 }]
-  }
-}
-```
-
----
-
-## Embed rule
-
-Every video result includes `embedUrl` in the form `https://www.youtube.com/embed/<id>`. Use it directly in an `<iframe>` or any embed-accepting surface. The bare `id` and the watch `url` are also always provided.
-
-## Error envelope
-
-```json
-{
-  "ok": false,
-  "command": "transcript",
-  "error": {
-    "code": "FETCH_FAILED",
-    "message": "This video is unavailable",
-    "hint": "From a datacenter/cloud IP, YouTube may block requests — run from a residential network."
-  }
-}
-```
-
-Error codes:
-- `INVALID_INPUT` — empty query, or a target that isn't a valid YouTube id/URL. No network call is made.
-- `FETCH_FAILED` — the request to YouTube failed (video unavailable/private, or a network/IP block). Run from a residential network if you're on a datacenter IP.
-- `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — the tool/command name isn't recognized.
-
-## Failure modes
-
-- **No captions** — a video without caption tracks returns `ok: true` with `transcript: null` and a `reason` (not an error). `context` still returns full metadata + embed.
-- **Cloud/sandbox IP block** — from a datacenter IP, YouTube may block requests; run from a residential network. (A built-in proxy option is planned, not yet wired.)
-- **Invalid id or URL** — returns `INVALID_INPUT` before any network call.
