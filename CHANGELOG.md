@@ -1,3 +1,18 @@
+# [1.2.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.1.0...v1.2.0) (2026-06-03)
+
+
+### Bug Fixes
+
+* applyMaxChars slices first segment instead of empty string; parseChapters handles 3-digit minutes ([3655fe9](https://github.com/gabros20/youtube-relay-mcp/commit/3655fe982f6c86590054d85beabc60884e7d64ab))
+
+
+### Features
+
+* CLI search filters, transcript peek flags, batch ids + stdin ([4c7967c](https://github.com/gabros20/youtube-relay-mcp/commit/4c7967c4587765c610a210a0199d8251772e38f4))
+* enriched search signals, filters + pagination, info captions/chapters, peek helpers ([c70c11d](https://github.com/gabros20/youtube-relay-mcp/commit/c70c11d9d92e00e8608a166e50da02b46837624a))
+* MCP parity for new options + rewrite SKILL.md as research funnel + docs ([3c1d02e](https://github.com/gabros20/youtube-relay-mcp/commit/3c1d02e731ec63943be556e960c33a5fc43cf494))
+* search filter passthrough + transcript peek (--head/--max-chars) in commands ([4b8a12b](https://github.com/gabros20/youtube-relay-mcp/commit/4b8a12b67ad41075c1b1f355acb90b259c0d3ab1))
+
 # [1.1.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.0.0...v1.1.0) (2026-06-02)
 
 
