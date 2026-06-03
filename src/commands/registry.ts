@@ -71,6 +71,20 @@ export const COMMANDS: CommandMeta[] = [
     args: [{ flag: '--lang xx', description: 'Preferred caption language (BCP-47).' }],
     example: 'ytrelay context dQw4w9WgXcQ',
   },
+  {
+    name: 'frame',
+    summary:
+      'Extract high-res still frame(s) at timestamp(s). Pairs with transcript startMs to SEE a moment. Requires ffmpeg + yt-dlp on PATH.',
+    usage:
+      'ytrelay frame <id|url> --at <t> [--at <t2> ...] [--res 720|1080|1440|2160|max] [--format jpg|png] [--out <dir>]',
+    args: [
+      { flag: '--at <t>', description: 'Timestamp (repeatable): seconds, mm:ss, h:mm:ss, or Nms.' },
+      { flag: '--res', description: '720|1080|1440|2160|max (default 1080).' },
+      { flag: '--format jpg|png', description: 'jpg (default, q2) or png (lossless).' },
+      { flag: '--out <dir>', description: 'Output directory (default: current dir).' },
+    ],
+    example: 'ytrelay frame dQw4w9WgXcQ --at 1:30 --at 2:05 --res 1080',
+  },
 ];
 
 export const commandNames: string[] = COMMANDS.map((c) => c.name);

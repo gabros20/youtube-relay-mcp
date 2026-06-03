@@ -336,3 +336,94 @@ describe('run', () => {
     expect(JSON.parse(stdout).data.transcript).toBe('aaaa\nbbbb');
   });
 });
+
+// ---------------------------------------------------------------------------
+// frame (parse + dispatch with a fake extractor)
+// ---------------------------------------------------------------------------
+
+import type { FrameExtractor } from '../src/frame.ts';
+
+function fakeFrameExtractor() {
+  const calls = { grab: [] as number[] };
+  const extractor: FrameExtractor = {
+    async depsAvailable() {
+      return { ffmpeg: true, ytdlp: true };
+    },
+    async resolveStreamUrl(id) {
+      return `http://stream/${id}`;
+    },
+    async grabFrame(_url, seconds) {
+      calls.grab.push(seconds);
+      return { width: 1920, height: 1080 };
+    },
+  };
+  return { extractor, calls };
+}
+
+describe('parseArgs frame', () => {
+  test('repeatable --at, plus --res/--format/--out', () => {
+    const r = parseArgs([
+      'frame',
+      'dQw4w9WgXcQ',
+      '--at',
+      '1:30',
+      '--at',
+      '2:05',
+      '--res',
+      '1080',
+      '--format',
+      'png',
+      '--out',
+      '/tmp/f',
+    ]);
+    expect(r).toEqual({
+      kind: 'command',
+      command: 'frame',
+      opts: {
+        target: 'dQw4w9WgXcQ',
+        ats: ['1:30', '2:05'],
+        res: 1080,
+        format: 'png',
+        outDir: '/tmp/f',
+      },
+    });
+  });
+});
+
+describe('run frame', () => {
+  test('parses timestamps and extracts frames (ok, exit 0)', async () => {
+    const { engine } = makeFakeEngine();
+    const { extractor, calls } = fakeFrameExtractor();
+    const { stdout, exitCode } = await run(
+      ['frame', 'dQw4w9WgXcQ', '--at', '1:30', '--at', '2:05'],
+      engine,
+      '',
+      extractor,
+    );
+    expect(exitCode).toBe(0);
+    const env = JSON.parse(stdout);
+    expect(env.ok).toBe(true);
+    expect(env.data.frames).toHaveLength(2);
+    expect(calls.grab).toEqual([90, 125]); // 1:30 and 2:05 in seconds
+  });
+
+  test('invalid --at → INVALID_INPUT', async () => {
+    const { engine } = makeFakeEngine();
+    const { extractor } = fakeFrameExtractor();
+    const { exitCode, stdout } = await run(
+      ['frame', 'dQw4w9WgXcQ', '--at', 'soon'],
+      engine,
+      '',
+      extractor,
+    );
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout).error.code).toBe('INVALID_INPUT');
+  });
+
+  test('no --at → INVALID_INPUT', async () => {
+    const { engine } = makeFakeEngine();
+    const { extractor } = fakeFrameExtractor();
+    const { exitCode } = await run(['frame', 'dQw4w9WgXcQ'], engine, '', extractor);
+    expect(exitCode).toBe(1);
+  });
+});

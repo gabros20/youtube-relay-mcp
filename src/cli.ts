@@ -1,7 +1,9 @@
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { runContext, runInfo, runSearch, runTranscript } from './commands/index.ts';
+import { runContext, runFrame, runInfo, runSearch, runTranscript } from './commands/index.ts';
 import { COMMANDS, commandNames } from './commands/registry.ts';
+import type { FrameExtractor, ImageFormat, Resolution } from './frame.ts';
+import { createFrameExtractor, parseTimeToSeconds } from './frame.ts';
 import { err, toJson } from './output.ts';
 import type {
   ContextResult,
@@ -36,6 +38,14 @@ type TranscriptOpts = {
   maxChars?: number;
 };
 type ContextOpts = { targets: string[]; lang?: string };
+// frame is single-video, multiple timestamps; `ats` are raw strings (validated in run).
+type FrameCmdOpts = {
+  target: string;
+  ats: string[];
+  res?: Resolution;
+  format?: ImageFormat;
+  outDir?: string;
+};
 
 export type ParsedCommand =
   | { kind: 'help' }
@@ -44,7 +54,14 @@ export type ParsedCommand =
   | { kind: 'command'; command: 'info'; opts: InfoOpts }
   | { kind: 'command'; command: 'transcript'; opts: TranscriptOpts }
   | { kind: 'command'; command: 'context'; opts: ContextOpts }
+  | { kind: 'command'; command: 'frame'; opts: FrameCmdOpts }
   | { kind: 'unknown'; command: string };
+
+function parseRes(v: string | undefined): Resolution | undefined {
+  if (v === 'max') return 'max';
+  const n = Number(v);
+  return n === 720 || n === 1080 || n === 1440 || n === 2160 ? (n as Resolution) : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // parseArgs
@@ -65,7 +82,45 @@ export function parseArgs(argv: string[]): ParsedCommand {
     return { kind: 'unknown', command: first };
   }
 
-  const { positionals, flags } = tokenize(argv.slice(1));
+  const rest = argv.slice(1);
+
+  // frame needs repeatable --at, which the simple tokeniser can't express.
+  if (first === 'frame') {
+    const ats: string[] = [];
+    const fpos: string[] = [];
+    const fflags: Record<string, string> = {};
+    for (let i = 0; i < rest.length; i++) {
+      const t = rest[i];
+      if (t === '--at') {
+        const v = rest[++i];
+        if (v !== undefined) ats.push(v);
+      } else if (t?.startsWith('--')) {
+        const v = rest[i + 1];
+        if (v !== undefined && !v.startsWith('--')) {
+          fflags[t] = v;
+          i++;
+        } else {
+          fflags[t] = '';
+        }
+      } else if (t !== undefined) {
+        fpos.push(t);
+      }
+    }
+    return {
+      kind: 'command',
+      command: 'frame',
+      opts: {
+        target: fpos[0] ?? '',
+        ats,
+        res: parseRes(fflags['--res']),
+        format:
+          fflags['--format'] === 'png' ? 'png' : fflags['--format'] === 'jpg' ? 'jpg' : undefined,
+        outDir: fflags['--out'] || undefined,
+      },
+    };
+  }
+
+  const { positionals, flags } = tokenize(rest);
 
   if (first === 'search') {
     return {
@@ -175,6 +230,7 @@ export async function run(
   argv: string[],
   engine: Engine,
   stdin = '',
+  frameExtractor?: FrameExtractor,
 ): Promise<{ stdout: string; exitCode: number }> {
   const parsed = parseArgs(argv);
 
@@ -203,6 +259,27 @@ export async function run(
       return invalid('search', '--limit must be a positive integer');
     }
     const envelope = await runSearch(engine, parsed.opts);
+    return { stdout: toJson(envelope), exitCode: envelope.ok ? 0 : 1 };
+  }
+
+  // frame — single video, one-or-more timestamps; shells out to ffmpeg/yt-dlp.
+  if (parsed.command === 'frame') {
+    const ats: number[] = [];
+    for (const a of parsed.opts.ats) {
+      const seconds = parseTimeToSeconds(a);
+      if (seconds === null) return invalid('frame', `invalid --at value: ${a}`);
+      ats.push(seconds);
+    }
+    if (ats.length === 0) {
+      return invalid('frame', 'at least one --at timestamp is required (e.g. --at 1:30)');
+    }
+    const envelope = await runFrame(frameExtractor ?? createFrameExtractor(), {
+      target: parsed.opts.target,
+      ats,
+      res: parsed.opts.res,
+      format: parsed.opts.format,
+      outDir: parsed.opts.outDir,
+    });
     return { stdout: toJson(envelope), exitCode: envelope.ok ? 0 : 1 };
   }
 

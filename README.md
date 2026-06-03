@@ -27,7 +27,12 @@ ytrelay search "agentic engineering" --limit 30 --sort views   # cheap, enriched
 ytrelay info <id|url> [<id> ...]      # full description + chapters + caption info (batch ok)
 ytrelay transcript <id|url> --head 120   # PEEK: first 2 min; or --max-chars N
 ytrelay context <id|url>              # metadata + full transcript + embed in one shot
+ytrelay frame <id|url> --at 1:30      # high-res still frame at a timestamp (needs ffmpeg + yt-dlp)
 ```
+
+`frame` extracts full-resolution stills at exact timestamps (pairs with transcript
+`startMs` to *see* a moment). It's the only command needing external binaries
+(**ffmpeg + yt-dlp** on PATH); the rest are pure-Node.
 
 **The funnel** (see [`SKILL.md`](./.claude/skills/youtube-relay/SKILL.md)): rank
 on cheap search metadata → enrich the shortlist with `info` → peek finalists with

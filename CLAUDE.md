@@ -27,6 +27,11 @@ path. Published to npm.
 - `src/youtube.ts` — the only place that talks to `youtubei.js`. Wraps
   search / getInfo / getTranscript and normalizes their output. Network lives
   here so command logic stays testable.
+- `src/frame.ts` — the ONLY module that shells out to external binaries
+  (yt-dlp resolves the stream URL; ffmpeg seeks one frame; ffprobe reads dims).
+  Pure helpers (parseTimeToSeconds, ytdlpFormat, ffmpegArgs, frameOutputName) are
+  TDD'd; the spawning `FrameExtractor` is injected so `runFrame` is testable with
+  a fake. `frame` is the only command needing binaries; everything else is pure-TS.
 - `src/ids.ts` — pure video-ID extraction from any URL form. No I/O.
 - `src/output.ts` — pure JSON success/error envelope formatting. No I/O.
 - `src/commands/registry.ts` — single source of truth for command definitions

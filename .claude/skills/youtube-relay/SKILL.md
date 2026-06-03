@@ -94,6 +94,21 @@ ytrelay context <id|url> [<id|url> ...] [--lang xx]
 - Returns enriched `info` fields **plus** `transcript`. Metadata + embed are
   always returned even if the transcript is unavailable (`transcript.reason`).
 
+### `frame` — COST: medium. SEE a moment (high-res still). Requires ffmpeg + yt-dlp.
+```
+ytrelay frame <id|url> --at <t> [--at <t2> ...] [--res 720|1080|1440|2160|max]
+        [--format jpg|png] [--out <dir>]
+```
+- Extracts full-resolution still frame(s) at the given timestamp(s) and writes
+  image **files**; returns `{ id, frames: [{ at, path, width, height } | { at, error }] }`.
+- `--at` is repeatable and accepts seconds / `mm:ss` / `h:mm:ss` / `<n>ms`.
+- **Pairs with transcript timestamps**: take a segment's `startMs`, then
+  `frame --at <startMs>ms` to see exactly what was on screen. On-screen visuals
+  often lag the narration, so grab a few (`--at <t> --at <t+3> --at <t+5>`) and
+  pick the clearest.
+- Requires **ffmpeg + yt-dlp on PATH** (the only command that does); missing →
+  `MISSING_DEPENDENCY` with an install hint. Default `--res 1080`; `max` for 4K.
+
 ---
 
 ## Composition notes
@@ -112,6 +127,7 @@ ytrelay context <id|url> [<id|url> ...] [--lang xx]
 - `FETCH_FAILED` — request to YouTube failed (video unavailable/private, or a
   datacenter-IP block — run from a residential network).
 - `UNKNOWN_TOOL` / `UNKNOWN_COMMAND` — unrecognized name.
+- `MISSING_DEPENDENCY` — `frame` only: ffmpeg and/or yt-dlp not on PATH (hint included).
 
 ## Install
 

@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { runContext, runInfo, runSearch, runTranscript } from './commands/index.ts';
+import { runContext, runFrame, runInfo, runSearch, runTranscript } from './commands/index.ts';
+import type { FrameExtractor, ImageFormat, Resolution } from './frame.ts';
+import { createFrameExtractor, parseTimeToSeconds } from './frame.ts';
 import { err, toJson } from './output.ts';
 import type { Engine, SearchOpts } from './youtube.ts';
 import { createEngine } from './youtube.ts';
@@ -21,6 +23,12 @@ const getEngine = (): Promise<Engine> => {
     enginePromise = createEngine();
   }
   return enginePromise;
+};
+
+let frameExtractor: FrameExtractor | undefined;
+const getFrameExtractor = (): FrameExtractor => {
+  if (frameExtractor === undefined) frameExtractor = createFrameExtractor();
+  return frameExtractor;
 };
 
 // ── Tool result shape ───────────────────────────────────────────────────────
@@ -79,6 +87,28 @@ export async function runTool(
     const target = String(args.target ?? '');
     const lang = args.lang !== undefined ? String(args.lang) : undefined;
     const envelope = await runContext(engine, { target, lang });
+    return envelope.ok ? text(envelope) : errResult(envelope);
+  }
+
+  if (name === 'frame') {
+    const target = String(args.target ?? '');
+    const raw = Array.isArray(args.at) ? args.at : args.at !== undefined ? [args.at] : [];
+    const ats: number[] = [];
+    for (const a of raw) {
+      const seconds = typeof a === 'number' ? a : parseTimeToSeconds(String(a));
+      if (seconds === null) {
+        return errResult(err('frame', 'INVALID_INPUT', `invalid at value: ${a}`));
+      }
+      ats.push(seconds);
+    }
+    const format = args.format === 'png' ? 'png' : args.format === 'jpg' ? 'jpg' : undefined;
+    const envelope = await runFrame(getFrameExtractor(), {
+      target,
+      ats,
+      res: args.res as Resolution | undefined,
+      format: format as ImageFormat | undefined,
+      outDir: args.outDir !== undefined ? String(args.outDir) : undefined,
+    });
     return envelope.ok ? text(envelope) : errResult(envelope);
   }
 
@@ -152,6 +182,32 @@ function buildServer(): McpServer {
       },
     },
     async (args: unknown) => runTool(await getEngine(), 'context', args as Record<string, unknown>),
+  );
+
+  server.registerTool(
+    'frame',
+    {
+      description:
+        'Extract high-res still frame(s) at timestamp(s) — pairs with transcript startMs to SEE a moment. Requires ffmpeg + yt-dlp on PATH; writes image files and returns their paths.',
+      inputSchema: {
+        target: z.string().describe('YouTube video id or URL'),
+        at: z
+          .array(z.union([z.number(), z.string()]))
+          .describe('timestamps: seconds, "mm:ss", "h:mm:ss", or "<n>ms"'),
+        res: z
+          .union([
+            z.literal(720),
+            z.literal(1080),
+            z.literal(1440),
+            z.literal(2160),
+            z.literal('max'),
+          ])
+          .optional(),
+        format: z.enum(['jpg', 'png']).optional(),
+        outDir: z.string().optional(),
+      },
+    },
+    async (args: unknown) => runTool(await getEngine(), 'frame', args as Record<string, unknown>),
   );
 
   return server;
