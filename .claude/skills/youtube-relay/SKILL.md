@@ -1,3 +1,15 @@
+---
+name: youtube-relay
+description: >
+  Deep-research YouTube via the `ytrelay` CLI — search videos, rank on cheap
+  metadata, fetch full descriptions/chapters, peek or read transcripts, extract
+  still frames, and get embeddable video IDs. Use whenever the task involves
+  finding, evaluating, summarizing, quoting, or embedding YouTube videos —
+  "find videos about X", "what does this video say", "get the transcript",
+  "summarize this YouTube link", "find a talk on Y" — or when a YouTube URL or
+  video ID appears and its content is needed.
+---
+
 # youtube-relay-mcp
 
 A **deep-research tool for YouTube** for AI agents — a CLI (`ytrelay`), an MCP

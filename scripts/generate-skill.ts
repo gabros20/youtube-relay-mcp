@@ -1,12 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { stripFrontmatter } from '../src/frontmatter.ts';
 
 const root = join(import.meta.dirname, '..');
 const skillPath = join(root, '.claude', 'skills', 'youtube-relay', 'SKILL.md');
 const outDir = join(root, 'src', 'generated');
 const outPath = join(outDir, 'skill.ts');
 
-const contents = readFileSync(skillPath, 'utf8');
+// The frontmatter exists so Claude Code can discover the skill; embedders want
+// the prose only.
+const contents = stripFrontmatter(readFileSync(skillPath, 'utf8'));
 
 mkdirSync(outDir, { recursive: true });
 
