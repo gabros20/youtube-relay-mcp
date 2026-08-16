@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { runContext, runFrame, runInfo, runSearch, runTranscript } from './commands/index.ts';
 import { COMMANDS, commandNames } from './commands/registry.ts';
+import { isEntryPoint } from './entry.ts';
 import type { FrameExtractor, ImageFormat, Resolution } from './frame.ts';
 import { createFrameExtractor, parseTimeToSeconds } from './frame.ts';
 import { err, toJson } from './output.ts';
@@ -346,13 +346,9 @@ export async function main(): Promise<void> {
 }
 
 // Guard: only run main when executed as the entry point (not when imported).
-// import.meta.main is true in Bun when the file is the program entry; in Node/tsup
-// we fall back to an OS-native absolute-path comparison (Windows-safe — no
-// hard-coded forward-slash suffix matching).
-const isEntry =
-  import.meta.main === true ||
-  (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]);
-
-if (isEntry) {
+// import.meta.main is true in Bun and Node >= 22.18; older Node leaves it
+// undefined, so isEntryPoint compares canonicalised paths — which is also what
+// makes the symlinked global-install bin work.
+if (import.meta.main === true || isEntryPoint(import.meta.url, process.argv[1])) {
   void main();
 }
