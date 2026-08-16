@@ -4,11 +4,11 @@
 // Contains NO business logic; all decisions live in src/commands/*.
 
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { runContext, runFrame, runInfo, runSearch, runTranscript } from './commands/index.ts';
+import { isEntryPoint } from './entry.ts';
 import type { FrameExtractor, ImageFormat, Resolution } from './frame.ts';
 import { createFrameExtractor, parseTimeToSeconds } from './frame.ts';
 import { err, toJson } from './output.ts';
@@ -221,11 +221,8 @@ export async function main(): Promise<void> {
   await server.connect(transport);
 }
 
-// Guard: only run main when this file is the direct entry point.
-const isEntry =
-  import.meta.main === true ||
-  (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1]);
-
-if (isEntry) {
+// Guard: only run main when this file is the direct entry point. See src/entry.ts
+// for why the paths must be canonicalised before comparison.
+if (import.meta.main === true || isEntryPoint(import.meta.url, process.argv[1])) {
   void main();
 }
