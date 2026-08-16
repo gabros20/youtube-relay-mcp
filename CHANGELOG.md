@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/gabros20/youtube-relay-mcp/compare/v1.3.1...v1.3.2) (2026-08-16)
+
+
+### Bug Fixes
+
+* add frontmatter to SKILL.md so Claude Code can discover the skill ([ab232b3](https://github.com/gabros20/youtube-relay-mcp/commit/ab232b399fa9b858a9710492e7b9ea603c52ffce))
+
 ## [1.3.1](https://github.com/gabros20/youtube-relay-mcp/compare/v1.3.0...v1.3.1) (2026-08-16)
 
 
