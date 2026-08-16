@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/gabros20/youtube-relay-mcp/compare/v1.3.0...v1.3.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* run main when invoked through a symlinked bin ([c57c6e5](https://github.com/gabros20/youtube-relay-mcp/commit/c57c6e58022c8714db7cc48a0f34687b61915257))
+
 # [1.3.0](https://github.com/gabros20/youtube-relay-mcp/compare/v1.2.0...v1.3.0) (2026-06-03)
 
 
